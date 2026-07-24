@@ -7,17 +7,22 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { Student } from '../students/student.entity';
+import { AdminsModule } from '../admins/admins.module';
+import { RedisModule } from '../redis/redis.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Student]),
     PassportModule,
+    AdminsModule,
+    RedisModule,
+    // JwtModule dùng cho access token (sign/verify trong service dùng config trực tiếp)
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        secret: config.get('JWT_SECRET') || 'dev-secret',
-        signOptions: { expiresIn: config.get('JWT_EXPIRES_IN') || '7d' },
+        secret: config.get('JWT_ACCESS_SECRET') || 'access-dev-secret',
+        signOptions: { expiresIn: '15m' },
       }),
     }),
   ],

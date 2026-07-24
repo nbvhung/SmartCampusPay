@@ -1,4 +1,8 @@
-import { Controller, Get, Post, Body, Param, Patch, UseGuards } from '@nestjs/common';
+import {
+  Controller, Get, Post, Body, Param, Patch, UseGuards,
+  UseInterceptors, UploadedFile, ParseFilePipe, MaxFileSizeValidator, FileTypeValidator,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthGuard } from '@nestjs/passport';
 import { StudentsService } from './students.service';
 import { CreateStudentDto } from './dto/create-student.dto';
@@ -26,5 +30,29 @@ export class StudentsController {
   @Patch(':id/toggle')
   toggleActive(@Param('id') id: string) {
     return this.service.toggleActive(id);
+  }
+
+  /**
+   * POST /api/v1/students/import
+   * Upload file Excel để import danh sách sinh viên hàng loạt
+   * File .xlsx với các cột: MSV | Họ tên | Email | Điện thoại | Khoa | Ngày sinh (dd/mm/yyyy)
+   */
+  @Post('import')
+  @UseInterceptors(FileInterceptor('file'))
+  async bulkImport(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB
+          new FileTypeValidator({
+            fileType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          }),
+        ],
+        fileIsRequired: true,
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
+    return this.service.bulkImport(file.buffer);
   }
 }

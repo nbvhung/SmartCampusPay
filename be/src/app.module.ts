@@ -6,6 +6,7 @@ import { APP_GUARD } from '@nestjs/core';
 import databaseConfig from './config/database.config';
 import { AuthModule } from './modules/auth/auth.module';
 import { StudentsModule } from './modules/students/students.module';
+import { AdminsModule } from './modules/admins/admins.module';
 import { CardsModule } from './modules/cards/cards.module';
 import { AccountsModule } from './modules/accounts/accounts.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
@@ -24,6 +25,7 @@ import { RedisModule } from './modules/redis/redis.module';
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
     AuthModule,
     StudentsModule,
+    AdminsModule,
     CardsModule,
     AccountsModule,
     TransactionsModule,

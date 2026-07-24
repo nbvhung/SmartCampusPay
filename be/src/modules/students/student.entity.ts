@@ -28,6 +28,12 @@ export class Student {
   @Column({ default: true })
   isActive: boolean;
 
+  @Column({ type: 'date', nullable: true })
+  dateOfBirth: Date;
+
+  @Column({ default: true })
+  mustChangePassword: boolean;
+
   @Column({ nullable: true, select: false })
   passwordHash: string;
 

@@ -1,4 +1,4 @@
-import { IsString, IsEmail, IsOptional } from 'class-validator';
+import { IsString, IsEmail, IsOptional, IsDateString } from 'class-validator';
 
 export class CreateStudentDto {
   @IsString()
@@ -7,7 +7,7 @@ export class CreateStudentDto {
   @IsString()
   fullName: string;
 
-  @IsEmail()
+  @IsEmail({}, { message: 'Email không hợp lệ' })
   email: string;
 
   @IsOptional()
@@ -17,4 +17,8 @@ export class CreateStudentDto {
   @IsOptional()
   @IsString()
   faculty?: string;
+
+  @IsOptional()
+  @IsDateString({}, { message: 'Ngày sinh không hợp lệ (YYYY-MM-DD)' })
+  dateOfBirth?: string;
 }
