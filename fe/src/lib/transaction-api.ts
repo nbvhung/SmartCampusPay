@@ -1,5 +1,5 @@
 import api from './axios';
-import type { ApiResponse, Transaction, PayRequest, TopupRequest } from '@/types';
+import type { ApiResponse, Transaction, PayRequest } from '@/types';
 
 export const transactionApi = {
   list: (params?: { page?: number; limit?: number; studentCode?: string; startDate?: string; endDate?: string }) =>
@@ -13,9 +13,6 @@ export const transactionApi = {
 
   payByCard: (data: { cardUid: string; amount: number; idempotencyKey: string; description?: string }) =>
     api.post<ApiResponse<Transaction>>('/transactions/pay-by-card', data),
-
-  topup: (data: TopupRequest) =>
-    api.post<ApiResponse<Transaction>>('/transactions/topup', data),
 
   stats: () =>
     api.get<ApiResponse<{

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Patch, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AccountsService } from './accounts.service';
 
@@ -10,11 +10,6 @@ export class AccountsController {
   @Get('balance/:studentId')
   getBalance(@Param('studentId') studentId: string) {
     return this.service.getBalance(studentId);
-  }
-
-  @Post('topup')
-  topup(@Body() dto: { studentId: string; amount: number }) {
-    return this.service.topup(dto.studentId, dto.amount);
   }
 
   @Patch(':id/freeze')

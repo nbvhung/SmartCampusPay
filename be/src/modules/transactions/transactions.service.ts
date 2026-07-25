@@ -2,14 +2,13 @@ import {
   Injectable, NotFoundException, BadRequestException, Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Transaction, TransactionType, TransactionStatus } from './transaction.entity';
 import { StudentsService } from '../students/students.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { CardsService } from '../cards/cards.service';
 import { RedisService } from '../redis/redis.service';
 import { PayDto } from './dto/pay.dto';
-import { TopupDto } from './dto/topup.dto';
 
 @Injectable()
 export class TransactionsService {
@@ -18,7 +17,6 @@ export class TransactionsService {
   constructor(
     @InjectRepository(Transaction)
     private readonly repo: Repository<Transaction>,
-    private readonly dataSource: DataSource,
     private readonly studentsService: StudentsService,
     private readonly accountsService: AccountsService,
     private readonly cardsService: CardsService,
@@ -89,30 +87,9 @@ export class TransactionsService {
     }
   }
 
-  async topup(dto: TopupDto): Promise<{ transaction: Transaction; newBalance: number }> {
-    const student = await this.studentsService.findByCode(dto.studentCode);
-    if (!student) throw new NotFoundException('Student not found');
-
-    const account = await this.accountsService.topup(student.id, dto.amount);
-
-    const tx = this.repo.create({
-      amount: dto.amount,
-      type: TransactionType.CREDIT,
-      status: TransactionStatus.SUCCESS,
-      idempotencyKey: `topup_${student.id}_${Date.now()}`,
-      description: dto.description || 'Nạp tiền vào tài khoản',
-      studentCode: dto.studentCode,
-      studentId: student.id,
-      accountId: account.id,
-    });
-    const transaction = await this.repo.save(tx);
-
-    return { transaction, newBalance: account.balance };
-  }
-
   async findByStudent(studentCode: string): Promise<Transaction[]> {
     return this.repo.find({
-      where: { studentCode },
+      where: { studentCode, status: TransactionStatus.SUCCESS },
       order: { createdAt: 'DESC' },
       take: 50,
     });

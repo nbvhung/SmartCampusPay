@@ -35,6 +35,9 @@ export class Transaction {
   @Column({ unique: true, length: 64 })
   idempotencyKey: string;
 
+  @Column({ unique: true, length: 32, nullable: true })
+  referenceCode: string;
+
   @Column({ length: 255, nullable: true })
   description: string;
 
@@ -44,7 +47,7 @@ export class Transaction {
   @Column()
   studentId: string;
 
-  @Column()
+  @Column({ nullable: true })
   accountId: string;
 
   @Column({ nullable: true })

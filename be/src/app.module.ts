@@ -13,6 +13,7 @@ import { TransactionsModule } from './modules/transactions/transactions.module';
 import { MerchantsModule } from './modules/merchants/merchants.module';
 import { HardwareModule } from './modules/hardware/hardware.module';
 import { RedisModule } from './modules/redis/redis.module';
+import { SePayModule } from './modules/sepay/sepay.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { RedisModule } from './modules/redis/redis.module';
     MerchantsModule,
     HardwareModule,
     RedisModule,
+    SePayModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

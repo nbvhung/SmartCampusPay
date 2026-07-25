@@ -80,6 +80,7 @@ export interface Transaction {
   type: TransactionType;
   status: TransactionStatus;
   idempotencyKey: string;
+  referenceCode?: string;
   description?: string;
   studentCode?: string;
   studentId: string;
@@ -87,12 +88,6 @@ export interface Transaction {
   merchantId?: string;
   merchant?: Merchant;
   createdAt: string;
-}
-
-export interface TopupRequest {
-  studentCode: string;
-  amount: number;
-  idempotencyKey: string;
 }
 
 export interface PayRequest {
