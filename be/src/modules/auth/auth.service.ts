@@ -95,6 +95,67 @@ export class AuthService {
     };
   }
 
+  // ─── UNIFIED LOGIN ─────────────────────────────────────────────────────────
+
+  async unifiedLogin(identifier: string, password: string) {
+    // Thử student trước
+    const student = await this.studentRepo.findOne({
+      where: { studentCode: identifier },
+      select: {
+        id: true,
+        studentCode: true,
+        fullName: true,
+        passwordHash: true,
+        isActive: true,
+        mustChangePassword: true,
+      },
+    });
+
+    if (student && student.isActive) {
+      const valid = student.passwordHash && await bcrypt.compare(password, student.passwordHash);
+      if (valid) {
+        const { accessToken, refreshToken } = await this.issueTokenPair(
+          student.id,
+          'student',
+          student.mustChangePassword,
+        );
+        return {
+          accessToken,
+          refreshToken,
+          mustChangePassword: student.mustChangePassword,
+          user: {
+            id: student.id,
+            studentCode: student.studentCode,
+            fullName: student.fullName,
+            role: 'student' as const,
+          },
+        };
+      }
+    }
+
+    // Thử admin
+    const admin = await this.adminsService.findByUsername(identifier);
+    if (admin && admin.isActive) {
+      const valid = admin.passwordHash && await bcrypt.compare(password, admin.passwordHash);
+      if (valid) {
+        const { accessToken, refreshToken } = await this.issueTokenPair(admin.id, admin.role);
+        return {
+          accessToken,
+          refreshToken,
+          mustChangePassword: false,
+          user: {
+            id: admin.id,
+            username: admin.username,
+            fullName: admin.fullName,
+            role: admin.role as 'admin' | 'super_admin',
+          },
+        };
+      }
+    }
+
+    throw new UnauthorizedException('Mã sinh viên/tên đăng nhập hoặc mật khẩu không đúng');
+  }
+
   // ─── REFRESH TOKEN ──────────────────────────────────────────────────────────
 
   async refresh(incomingRefreshToken: string) {

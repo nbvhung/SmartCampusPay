@@ -4,7 +4,7 @@ import {
 import { AuthService } from './auth.service';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { LoginDto, AdminLoginDto } from './dto/login.dto';
+import { LoginDto, AdminLoginDto, UnifiedLoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 
 const COOKIE_OPTIONS = {
@@ -25,6 +25,20 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: any) {
     const result = await this.service.studentLogin(dto.studentCode, dto.password);
+    this.setTokenCookies(res, result.accessToken, result.refreshToken);
+    return {
+      mustChangePassword: result.mustChangePassword,
+      user: result.user,
+    };
+  }
+
+  // ─── UNIFIED LOGIN ──────────────────────────────────────────────────────────
+
+  @Public()
+  @Post('login/unified')
+  @HttpCode(HttpStatus.OK)
+  async unifiedLogin(@Body() dto: UnifiedLoginDto, @Res({ passthrough: true }) res: any) {
+    const result = await this.service.unifiedLogin(dto.identifier, dto.password);
     this.setTokenCookies(res, result.accessToken, result.refreshToken);
     return {
       mustChangePassword: result.mustChangePassword,

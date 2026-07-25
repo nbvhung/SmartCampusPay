@@ -3,17 +3,10 @@ import type { LoginResponse } from '../types/auth';
 
 export const authApi = {
   /**
-   * Đăng nhập sinh viên bằng MSV + mật khẩu
-   * BE set httpOnly cookie access_token + refresh_token
+   * Đăng nhập unified — tự detect student (studentCode) hay admin (username)
    */
-  studentLogin: (studentCode: string, password: string) =>
-    api.post<{ success: boolean; data: LoginResponse }>('/auth/login', { studentCode, password }),
-
-  /**
-   * Đăng nhập admin bằng username + mật khẩu
-   */
-  adminLogin: (username: string, password: string) =>
-    api.post<{ success: boolean; data: LoginResponse }>('/auth/admin/login', { username, password }),
+  login: (identifier: string, password: string) =>
+    api.post<{ success: boolean; data: LoginResponse }>('/auth/login/unified', { identifier, password }),
 
   /**
    * Làm mới access token (refresh_token đọc từ httpOnly cookie)

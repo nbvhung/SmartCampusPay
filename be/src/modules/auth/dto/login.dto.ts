@@ -15,3 +15,11 @@ export class AdminLoginDto {
   @IsString({ message: 'Mật khẩu không hợp lệ' })
   password: string;
 }
+
+export class UnifiedLoginDto {
+  @IsString({ message: 'Tên đăng nhập/MSSV không hợp lệ' })
+  identifier: string;
+
+  @IsString({ message: 'Mật khẩu không hợp lệ' })
+  password: string;
+}
