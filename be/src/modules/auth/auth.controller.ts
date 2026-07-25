@@ -1,12 +1,10 @@
 import {
   Controller, Post, Get, Body, Res, Req, HttpCode, HttpStatus,
 } from '@nestjs/common';
-import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { LoginDto, AdminLoginDto } from './dto/login.dto';
-import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 
 const COOKIE_OPTIONS = {
@@ -114,12 +112,12 @@ export class AuthController {
     res.cookie('refresh_token', refreshToken, {
       ...COOKIE_OPTIONS,
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 ngày
-      path: '/auth/refresh',
+      path: '/api/v1/auth/refresh',
     });
   }
 
   private clearTokenCookies(res: any) {
     res.clearCookie('access_token', { path: '/' });
-    res.clearCookie('refresh_token', { path: '/auth/refresh' });
+    res.clearCookie('refresh_token', { path: '/api/v1/auth/refresh' });
   }
 }

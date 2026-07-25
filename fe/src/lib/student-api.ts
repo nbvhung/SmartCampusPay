@@ -1,0 +1,21 @@
+import api from './axios';
+import type { ApiResponse, Student } from '@/types';
+
+export const studentApi = {
+  list: (params?: { page?: number; limit?: number; faculty?: string; search?: string }) =>
+    api.get<ApiResponse<Student[]>>('/students', { params }),
+
+  get: (id: string) =>
+    api.get<ApiResponse<Student>>(`/students/${id}`),
+
+  create: (data: { studentCode: string; fullName: string; email: string; faculty: string; phone?: string; dateOfBirth?: string }) =>
+    api.post<ApiResponse<Student>>('/students', data),
+
+  toggleActive: (id: string) =>
+    api.patch<ApiResponse<Student>>(`/students/${id}/toggle-active`),
+
+  import: (file: FormData) =>
+    api.post<ApiResponse<{ imported: number }>>('/students/import', file, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
+};
