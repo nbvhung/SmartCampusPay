@@ -5,12 +5,16 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthGuard } from '@nestjs/passport';
 import { StudentsService } from './students.service';
+import { AccountsService } from '../accounts/accounts.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 
 @Controller('students')
 @UseGuards(AuthGuard('jwt'))
 export class StudentsController {
-  constructor(private readonly service: StudentsService) {}
+  constructor(
+    private readonly service: StudentsService,
+    private readonly accountsService: AccountsService,
+  ) {}
 
   @Post()
   create(@Body() dto: CreateStudentDto) {
@@ -30,6 +34,25 @@ export class StudentsController {
   @Patch(':id/toggle')
   toggleActive(@Param('id') id: string) {
     return this.service.toggleActive(id);
+  }
+
+  // Endpoint tạm để tạo account cho student (sau khi xóa)
+  @Post(':id/create-account')
+  async createAccount(@Param('id') id: string) {
+    await this.accountsService.createAccountIfNotExists(id);
+    return { message: 'Account created' };
+  }
+
+  // Endpoint tạm: tạo account cho tất cả student chưa có
+  @Post('create-all-accounts')
+  async createAllAccounts() {
+    const students = await this.service.findAll();
+    let created = 0;
+    for (const student of students) {
+      await this.accountsService.createAccountIfNotExists(student.id);
+      created++;
+    }
+    return { message: `Created ${created} accounts` };
   }
 
   /**

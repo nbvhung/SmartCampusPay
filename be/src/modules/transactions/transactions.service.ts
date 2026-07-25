@@ -89,23 +89,25 @@ export class TransactionsService {
     }
   }
 
-  async topup(dto: TopupDto, _adminId: string): Promise<Transaction> {
+  async topup(dto: TopupDto): Promise<{ transaction: Transaction; newBalance: number }> {
     const student = await this.studentsService.findByCode(dto.studentCode);
     if (!student) throw new NotFoundException('Student not found');
 
-    await this.accountsService.topup(student.id, dto.amount);
+    const account = await this.accountsService.topup(student.id, dto.amount);
 
     const tx = this.repo.create({
       amount: dto.amount,
       type: TransactionType.CREDIT,
       status: TransactionStatus.SUCCESS,
       idempotencyKey: `topup_${student.id}_${Date.now()}`,
-      description: dto.description || 'Top-up',
+      description: dto.description || 'Nạp tiền vào tài khoản',
       studentCode: dto.studentCode,
       studentId: student.id,
-      accountId: (await this.accountsService.findByStudentId(student.id)).id,
+      accountId: account.id,
     });
-    return this.repo.save(tx);
+    const transaction = await this.repo.save(tx);
+
+    return { transaction, newBalance: account.balance };
   }
 
   async findByStudent(studentCode: string): Promise<Transaction[]> {
@@ -137,5 +139,46 @@ export class TransactionsService {
 
     const dailyKeys = await this.redis.get('stats:daily:keys');
     return { ...result, realtimeTxCount: dailyKeys ? parseInt(dailyKeys, 10) : 0 };
+  }
+
+  async getStats(): Promise<{
+    totalTransactions: number;
+    totalRevenue: number;
+    todayTransactions: number;
+    todayRevenue: number;
+    totalStudents: number;
+    totalMerchants: number;
+  }> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Total transactions & revenue
+    const totalStats = await this.repo
+      .createQueryBuilder('tx')
+      .select('COUNT(*)', 'totalTransactions')
+      .addSelect('COALESCE(SUM(CASE WHEN tx.status = \'success\' THEN tx.amount ELSE 0 END), 0)', 'totalRevenue')
+      .getRawOne();
+
+    // Today's transactions & revenue
+    const todayStats = await this.repo
+      .createQueryBuilder('tx')
+      .select('COUNT(*)', 'todayTransactions')
+      .addSelect('COALESCE(SUM(CASE WHEN tx.status = \'success\' THEN tx.amount ELSE 0 END), 0)', 'todayRevenue')
+      .where('tx.createdAt >= :today', { today })
+      .getRawOne();
+
+    // Count students & merchants (từ các service tương ứng)
+    // TODO: Gọi từ repository khác hoặc query trực tiếp
+    const studentCount = await this.repo.manager.count('students');
+    const merchantCount = await this.repo.manager.count('merchants');
+
+    return {
+      totalTransactions: parseInt(totalStats.totalTransactions, 10) || 0,
+      totalRevenue: parseInt(totalStats.totalRevenue, 10) || 0,
+      todayTransactions: parseInt(todayStats.todayTransactions, 10) || 0,
+      todayRevenue: parseInt(todayStats.todayRevenue, 10) || 0,
+      totalStudents: studentCount,
+      totalMerchants: merchantCount,
+    };
   }
 }

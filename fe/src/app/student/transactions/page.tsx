@@ -17,7 +17,7 @@ export default function StudentTransactionsPage() {
 
   useEffect(() => {
     if (!user) return;
-    transactionApi.listByStudent(user.id).then((r) => setTxs(r.data.data)).catch(() => {}).finally(() => setLoading(false));
+    transactionApi.listByStudent((user as any).studentCode).then((r) => setTxs(r.data.data)).catch(() => {}).finally(() => setLoading(false));
   }, [user]);
 
   if (loading || !user) return <StudentLayout><PageLoading /></StudentLayout>;

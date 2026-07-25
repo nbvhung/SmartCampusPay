@@ -23,7 +23,7 @@ export default function StudentTopupPage() {
     if (!user) return;
     Promise.all([
       accountApi.getBalance(user.id).then((r) => setBalance(r.data.data.balance)).catch(() => {}),
-      transactionApi.listByStudent(user.id, { limit: 20 }).then((r) => setTxs(r.data.data)).catch(() => {}),
+      transactionApi.listByStudent((user as any).studentCode, { limit: 20 }).then((r) => setTxs(r.data.data)).catch(() => {}),
     ]).finally(() => setLoading(false));
   }, [user]);
 
@@ -32,7 +32,7 @@ export default function StudentTopupPage() {
     setError('');
     setSuccess('');
     const num = Number(amount);
-    if (!num || num < 1000) { setError('Số tiền tối thiểu 1.000đ'); return; }
+    if (!num || num < 10000) { setError('Số tiền tối thiểu 10.000đ'); return; }
     if (num > 5000000) { setError('Số tiền tối đa 5.000.000đ'); return; }
 
     setSubmitting(true);
@@ -40,12 +40,11 @@ export default function StudentTopupPage() {
       const res = await accountApi.topup({
         studentCode: (user as any).studentCode,
         amount: num,
-        idempotencyKey: crypto.randomUUID(),
       });
-      setBalance(res.data.data.balance);
+      setBalance(res.data.data.newBalance);
       setSuccess(`Nạp thành công ${num.toLocaleString()}đ`);
       setAmount('');
-      const txsRes = await transactionApi.listByStudent(user!.id, { limit: 20 });
+      const txsRes = await transactionApi.listByStudent((user as any).studentCode, { limit: 20 });
       setTxs(txsRes.data.data);
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Nạp tiền thất bại');
@@ -76,13 +75,30 @@ export default function StudentTopupPage() {
 
         <form onSubmit={handleSubmit} className="max-w-sm mx-auto space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Số tiền nạp</label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Chọn số tiền nhanh</label>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {[50000, 100000, 200000, 500000, 1000000, 2000000].map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setAmount(String(v))}
+                  className={`py-2 px-3 rounded-lg border text-sm font-medium transition-colors ${
+                    Number(amount) === v
+                      ? 'bg-red-50 border-red-500 text-red-700'
+                      : 'border-gray-300 text-gray-700 hover:border-gray-400'
+                  }`}
+                >
+                  {v.toLocaleString()}đ
+                </button>
+              ))}
+            </div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Hoặc nhập số tiền khác</label>
             <input
               type="number"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               placeholder="Nhập số tiền..."
-              min={1000}
+              min={10000}
               max={5000000}
               required
               className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"

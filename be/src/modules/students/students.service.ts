@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, DataSource } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import * as ExcelJS from 'exceljs';
 import { Student } from './student.entity';
+import { Account } from '../accounts/account.entity';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { BulkImportResult, ImportStudentRow } from './dto/import-student.dto';
 
@@ -12,23 +13,47 @@ export class StudentsService {
   constructor(
     @InjectRepository(Student)
     private readonly repo: Repository<Student>,
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(dto: CreateStudentDto): Promise<Student> {
     const exists = await this.repo.findOne({ where: { studentCode: dto.studentCode } });
     if (exists) throw new ConflictException('Mã sinh viên đã tồn tại');
 
-    const student = this.repo.create(dto as Partial<Student>);
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
 
-    // Nếu có dateOfBirth thì sinh password mặc định ddmmyyyy
-    if (dto.dateOfBirth) {
-      const dob = new Date(dto.dateOfBirth);
-      const defaultPassword = this.formatDobPassword(dob);
-      student.passwordHash = await bcrypt.hash(defaultPassword, 10);
-      student.mustChangePassword = true;
+    try {
+      const student = queryRunner.manager.create(Student, dto as Partial<Student>);
+
+      // Nếu có dateOfBirth thì sinh password mặc định ddmmyyyy
+      if (dto.dateOfBirth) {
+        const dob = new Date(dto.dateOfBirth);
+        const defaultPassword = this.formatDobPassword(dob);
+        student.passwordHash = await bcrypt.hash(defaultPassword, 10);
+        student.mustChangePassword = true;
+      }
+
+      const savedStudent = await queryRunner.manager.save(student);
+
+      // Tạo tài khoản cho sinh viên
+      const account = queryRunner.manager.create(Account, {
+        studentId: savedStudent.id,
+        balance: 0,
+        dailyLimit: 500000,
+        dailySpent: 0,
+      });
+      await queryRunner.manager.save(account);
+
+      await queryRunner.commitTransaction();
+      return savedStudent;
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
     }
-
-    return this.repo.save(student);
   }
 
   async findAll(): Promise<Student[]> {
@@ -93,10 +118,16 @@ export class StudentsService {
     // Xử lý từng row
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
+      const queryRunner = this.dataSource.createQueryRunner();
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
+
       try {
-        const exists = await this.repo.findOne({ where: { studentCode: row.studentCode } });
+        const exists = await queryRunner.manager.findOne(Student, { where: { studentCode: row.studentCode } });
         if (exists) {
           result.skipped++;
+          await queryRunner.rollbackTransaction();
+          await queryRunner.release();
           continue;
         }
 
@@ -104,7 +135,7 @@ export class StudentsService {
         const defaultPassword = this.formatDobPassword(dob);
         const passwordHash = await bcrypt.hash(defaultPassword, 10);
 
-        const student = this.repo.create({
+        const student = queryRunner.manager.create(Student, {
           studentCode: row.studentCode,
           fullName: row.fullName,
           email: row.email,
@@ -116,14 +147,28 @@ export class StudentsService {
           isActive: true,
         });
 
-        await this.repo.save(student);
+        const savedStudent = await queryRunner.manager.save(student);
+
+        // Tạo tài khoản cho sinh viên
+        const account = queryRunner.manager.create(Account, {
+          studentId: savedStudent.id,
+          balance: 0,
+          dailyLimit: 500000,
+          dailySpent: 0,
+        });
+        await queryRunner.manager.save(account);
+
+        await queryRunner.commitTransaction();
         result.created++;
       } catch (err: any) {
+        await queryRunner.rollbackTransaction();
         result.errors.push({
           row: i + 2,
           studentCode: row.studentCode,
           reason: err?.message || 'Lỗi không xác định',
         });
+      } finally {
+        await queryRunner.release();
       }
     }
 

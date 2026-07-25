@@ -8,6 +8,7 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { Student } from '../students/student.entity';
 import { AdminsModule } from '../admins/admins.module';
+import { AccountsModule } from '../accounts/accounts.module';
 import { RedisModule } from '../redis/redis.module';
 
 @Module({
@@ -15,6 +16,7 @@ import { RedisModule } from '../redis/redis.module';
     TypeOrmModule.forFeature([Student]),
     PassportModule,
     AdminsModule,
+    AccountsModule,
     RedisModule,
     // JwtModule dùng cho access token (sign/verify trong service dùng config trực tiếp)
     JwtModule.registerAsync({

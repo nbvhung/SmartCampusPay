@@ -13,6 +13,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { Student } from '../students/student.entity';
 import { Admin } from '../admins/admin.entity';
 import { AdminsService } from '../admins/admins.service';
+import { AccountsService } from '../accounts/accounts.service';
 import { RedisService } from '../redis/redis.service';
 
 const ACCESS_TTL_SEC = 15 * 60;       // 15 phút
@@ -25,6 +26,7 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly adminsService: AdminsService,
     private readonly redis: RedisService,
+    private readonly accountsService: AccountsService,
     @InjectRepository(Student)
     private readonly studentRepo: Repository<Student>,
   ) {}
@@ -50,6 +52,9 @@ export class AuthService {
 
     const valid = student.passwordHash && await bcrypt.compare(password, student.passwordHash);
     if (!valid) throw new UnauthorizedException('Mã sinh viên hoặc mật khẩu không đúng');
+
+    // Tự động tạo account nếu chưa có
+    await this.accountsService.createAccountIfNotExists(student.id);
 
     const { accessToken, refreshToken } = await this.issueTokenPair(
       student.id,

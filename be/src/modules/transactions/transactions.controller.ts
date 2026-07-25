@@ -24,7 +24,7 @@ export class TransactionsController {
   @Post('topup')
   @UseGuards(AuthGuard('jwt'))
   async topup(@Body() dto: TopupDto) {
-    return this.service.topup(dto, 'admin');
+    return this.service.topup(dto);
   }
 
   @Get()
@@ -42,5 +42,11 @@ export class TransactionsController {
   @UseGuards(AuthGuard('jwt'))
   async getDailyStats() {
     return this.service.getDailyStats();
+  }
+
+  @Get('stats')
+  @UseGuards(AuthGuard('jwt'))
+  async getStats() {
+    return this.service.getStats();
   }
 }

@@ -5,11 +5,13 @@ import { memoryStorage } from 'multer';
 import { StudentsController } from './students.controller';
 import { StudentsService } from './students.service';
 import { Student } from './student.entity';
+import { AccountsModule } from '../accounts/accounts.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Student]),
     MulterModule.register({ storage: memoryStorage() }),
+    AccountsModule,
   ],
   controllers: [StudentsController],
   providers: [StudentsService],

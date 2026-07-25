@@ -22,6 +22,19 @@ export class AccountsService {
     return this.repo.save(account);
   }
 
+  async createAccountIfNotExists(studentId: string): Promise<Account> {
+    const existing = await this.repo.findOne({ where: { studentId } });
+    if (existing) return existing;
+
+    const account = this.repo.create({
+      studentId,
+      balance: 0,
+      dailyLimit: 500000,
+      dailySpent: 0,
+    });
+    return this.repo.save(account);
+  }
+
   async findByStudentId(studentId: string): Promise<Account> {
     const account = await this.repo.findOne({ where: { studentId } });
     if (!account) throw new NotFoundException('Account not found for student');

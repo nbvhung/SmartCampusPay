@@ -20,7 +20,7 @@ export default function StudentDashboardPage() {
     if (!user) return;
     Promise.all([
       accountApi.getBalance(user.id).then((r) => setBalance(r.data.data.balance)).catch(() => {}),
-      transactionApi.listByStudent(user.id, { limit: 10 }).then((r) => setRecentTxs(r.data.data)).catch(() => {}),
+      transactionApi.listByStudent((user as any).studentCode, { limit: 10 }).then((r) => setRecentTxs(r.data.data)).catch(() => {}),
     ]).finally(() => setLoading(false));
   }, [user]);
 
