@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, ForbiddenException } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { TransactionsService } from './transactions.service';
 import { PayDto } from './dto/pay.dto';
 import { ApiKeyGuard } from '../../common/guards/api-key.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('transactions')
 export class TransactionsController {
@@ -27,7 +28,11 @@ export class TransactionsController {
   }
 
   @Get('student/:code')
-  async findByStudent(@Param('code') code: string) {
+  @UseGuards(AuthGuard('jwt'))
+  async findByStudent(@Param('code') code: string, @CurrentUser() user: any) {
+    if (user.role === 'student' && user.studentCode !== code) {
+      throw new ForbiddenException('Bạn chỉ có thể xem giao dịch của chính mình');
+    }
     return this.service.findByStudent(code);
   }
 
