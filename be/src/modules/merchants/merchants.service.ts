@@ -47,4 +47,12 @@ export class MerchantsService {
     merchant.isActive = !merchant.isActive;
     return this.repo.save(merchant);
   }
+
+  async update(id: string, dto: Partial<CreateMerchantDto>): Promise<Merchant> {
+    const merchant = await this.findById(id);
+    if (dto.name !== undefined) merchant.name = dto.name;
+    if (dto.type !== undefined) merchant.type = dto.type;
+    if (dto.location !== undefined) merchant.location = dto.location;
+    return this.repo.save(merchant);
+  }
 }

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { TransactionsService } from './transactions.service';
 import { PayDto } from './dto/pay.dto';
@@ -30,10 +30,8 @@ export class TransactionsController {
   @Get('student/:code')
   @UseGuards(AuthGuard('jwt'))
   async findByStudent(@Param('code') code: string, @CurrentUser() user: any) {
-    if (user.role === 'student' && user.studentCode !== code) {
-      throw new ForbiddenException('Bạn chỉ có thể xem giao dịch của chính mình');
-    }
-    return this.service.findByStudent(code);
+    const targetCode = user.role === 'student' ? user.studentCode : code;
+    return this.service.findByStudent(targetCode);
   }
 
   @Get('stats/daily')

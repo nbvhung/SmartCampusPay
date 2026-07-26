@@ -9,7 +9,10 @@ export const merchantApi = {
     api.get<ApiResponse<Merchant>>(`/merchants/${id}`),
 
   create: (data: MerchantCreate) =>
-    api.post<ApiResponse<Merchant>>('/merchants', data),
+    api.post<ApiResponse<{ merchant: Merchant; rawApiKey: string }>>('/merchants', data),
+
+  update: (id: string, data: MerchantCreate) =>
+    api.patch<ApiResponse<Merchant>>(`/merchants/${id}`, data),
 
   regenerateKey: (id: string) =>
     api.post<ApiResponse<{ apiKey: string }>>(`/merchants/${id}/regenerate-key`),

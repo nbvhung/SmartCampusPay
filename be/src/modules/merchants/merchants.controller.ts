@@ -28,8 +28,13 @@ export class MerchantsController {
     return this.service.regenerateApiKey(id);
   }
 
-  @Patch(':id/toggle')
+  @Patch(':id/toggle-active')
   toggleActive(@Param('id') id: string) {
     return this.service.toggleActive(id);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: CreateMerchantDto) {
+    return this.service.update(id, dto);
   }
 }
