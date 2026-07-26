@@ -5,15 +5,15 @@ import { StudentLayout } from '@/components/layout/student-layout';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { PageLoading } from '@/components/ui/loading-spinner';
 import { transactionApi } from '@/lib/transaction-api';
-import { accountApi } from '@/lib/account-api';
 import { sepayApi, type SePayPayment } from '@/lib/sepay-api';
 import { useAuth } from '@/contexts/auth-context';
-import type { Transaction } from '@/types';
+import type { Transaction, Student } from '@/types';
 
 export default function StudentTopupPage() {
   const { user } = useAuth();
+  const student = user as Student | null;
   const [loading, setLoading] = useState(true);
-  const [balance, setBalance] = useState(0);
+  const [balance, setBalance] = useState(student?.accounts?.[0]?.balance ?? 0);
   const [amount, setAmount] = useState('');
   const [error, setError] = useState('');
   const [txs, setTxs] = useState<Transaction[]>([]);
@@ -23,16 +23,13 @@ export default function StudentTopupPage() {
   const [pollCount, setPollCount] = useState(0);
   const pollRef = useRef<ReturnType<typeof setInterval>>(undefined);
 
-  const studentCode = (user as any)?.studentCode;
+  const studentCode = student?.studentCode;
 
   const fetchData = useCallback(async () => {
-    if (!user) return;
-    const [balRes, txRes] = await Promise.all([
-      accountApi.getBalance(user.id).then(r => r.data.data).catch(() => null),
-      transactionApi.listByStudent(studentCode, { limit: 20 }).then(r => r.data.data).catch(() => []),
-    ]);
-    if (balRes) setBalance(balRes.balance);
+    if (!user || !studentCode) return;
+    const txRes = await transactionApi.listByStudent(studentCode, { limit: 20 }).then(r => r.data.data).catch(() => []);
     setTxs(txRes);
+    setBalance(student?.accounts?.[0]?.balance ?? 0);
     setLoading(false);
   }, [user, studentCode]);
 
@@ -62,7 +59,7 @@ export default function StudentTopupPage() {
           const st = statusRes.data.data;
           if (st.status === 'success') {
             clearInterval(pollRef.current);
-            await fetchData();
+            setBalance(prev => prev + st.amount);
             setPaymentStatus('success');
             setTimeout(() => {
               setPayment(null);

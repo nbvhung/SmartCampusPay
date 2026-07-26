@@ -5,6 +5,8 @@ import * as bcrypt from 'bcryptjs';
 import * as ExcelJS from 'exceljs';
 import { Student } from './student.entity';
 import { Account } from '../accounts/account.entity';
+import { Card } from '../cards/card.entity';
+import { CardsService } from '../cards/cards.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { BulkImportResult, ImportStudentRow } from './dto/import-student.dto';
 
@@ -14,6 +16,7 @@ export class StudentsService {
     @InjectRepository(Student)
     private readonly repo: Repository<Student>,
     private readonly dataSource: DataSource,
+    private readonly cardsService: CardsService,
   ) {}
 
   async create(dto: CreateStudentDto): Promise<Student> {
@@ -45,6 +48,15 @@ export class StudentsService {
         dailySpent: 0,
       });
       await queryRunner.manager.save(account);
+
+      // Tạo thẻ ảo cho sinh viên
+      const card = queryRunner.manager.create(Card, {
+        studentId: savedStudent.id,
+        uid: `MOCK-${dto.studentCode}`,
+        chipType: 'MIFARE',
+        status: 'active' as any,
+      });
+      await queryRunner.manager.save(card);
 
       await queryRunner.commitTransaction();
       return savedStudent;
@@ -157,6 +169,15 @@ export class StudentsService {
           dailySpent: 0,
         });
         await queryRunner.manager.save(account);
+
+        // Tạo thẻ ảo cho sinh viên
+        const card = queryRunner.manager.create(Card, {
+          studentId: savedStudent.id,
+          uid: `MOCK-${row.studentCode}`,
+          chipType: 'MIFARE',
+          status: 'active' as any,
+        });
+        await queryRunner.manager.save(card);
 
         await queryRunner.commitTransaction();
         result.created++;

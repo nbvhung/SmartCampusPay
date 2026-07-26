@@ -14,6 +14,7 @@ import { Student } from '../students/student.entity';
 import { Admin } from '../admins/admin.entity';
 import { AdminsService } from '../admins/admins.service';
 import { AccountsService } from '../accounts/accounts.service';
+import { CardsService } from '../cards/cards.service';
 import { RedisService } from '../redis/redis.service';
 
 const ACCESS_TTL_SEC = 15 * 60;       // 15 phút
@@ -27,6 +28,7 @@ export class AuthService {
     private readonly adminsService: AdminsService,
     private readonly redis: RedisService,
     private readonly accountsService: AccountsService,
+    private readonly cardsService: CardsService,
     @InjectRepository(Student)
     private readonly studentRepo: Repository<Student>,
   ) {}
@@ -55,6 +57,19 @@ export class AuthService {
 
     // Tự động tạo account nếu chưa có
     await this.accountsService.createAccountIfNotExists(student.id);
+
+    // Tự động tạo thẻ ảo nếu chưa có (cho SV cũ)
+    const existingCards = await this.studentRepo.manager.query(
+      `SELECT id FROM cards WHERE "studentId" = $1 LIMIT 1`,
+      [student.id],
+    );
+    if (existingCards.length === 0) {
+      await this.studentRepo.manager.query(
+        `INSERT INTO cards (id, uid, "chipType", status, "studentId", "createdAt", "updatedAt")
+         VALUES (gen_random_uuid(), $1, 'MIFARE', 'active', $2, NOW(), NOW())`,
+        [`MOCK-${student.studentCode}`, student.id],
+      );
+    }
 
     const { accessToken, refreshToken } = await this.issueTokenPair(
       student.id,

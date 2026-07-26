@@ -6,22 +6,21 @@ import { StatCard } from '@/components/ui/stat-card';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { PageLoading } from '@/components/ui/loading-spinner';
 import { transactionApi } from '@/lib/transaction-api';
-import { accountApi } from '@/lib/account-api';
 import { useAuth } from '@/contexts/auth-context';
-import type { Transaction } from '@/types';
+import type { Transaction, Student } from '@/types';
 
 export default function StudentDashboardPage() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [balance, setBalance] = useState(0);
   const [recentTxs, setRecentTxs] = useState<Transaction[]>([]);
+
+  const student = user as Student | null;
+  const balance = student?.accounts?.[0]?.balance ?? 0;
 
   useEffect(() => {
     if (!user) return;
-    Promise.all([
-      accountApi.getBalance(user.id).then((r) => setBalance(r.data.data.balance)).catch(() => {}),
-      transactionApi.listByStudent((user as any).studentCode, { limit: 10 }).then((r) => setRecentTxs(r.data.data)).catch(() => {}),
-    ]).finally(() => setLoading(false));
+    transactionApi.listByStudent((user as any).studentCode, { limit: 10 }).then((r) => setRecentTxs(r.data.data)).catch(() => {})
+      .finally(() => setLoading(false));
   }, [user]);
 
   if (loading || !user) return <StudentLayout><PageLoading /></StudentLayout>;
