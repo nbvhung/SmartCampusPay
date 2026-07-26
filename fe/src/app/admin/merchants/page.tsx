@@ -39,7 +39,7 @@ export default function AdminMerchantsPage() {
 
   async function handleRegen(id: string) {
     const res = await merchantApi.regenerateKey(id);
-    setNewKey(res.data.data.apiKey);
+    setNewKey(res.data.data.rawApiKey);
   }
 
   function openCreate() {

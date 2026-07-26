@@ -15,7 +15,7 @@ export const merchantApi = {
     api.patch<ApiResponse<Merchant>>(`/merchants/${id}`, data),
 
   regenerateKey: (id: string) =>
-    api.post<ApiResponse<{ apiKey: string }>>(`/merchants/${id}/regenerate-key`),
+    api.post<ApiResponse<{ rawApiKey: string }>>(`/merchants/${id}/regenerate-key`),
 
   toggleActive: (id: string) =>
     api.patch<ApiResponse<Merchant>>(`/merchants/${id}/toggle-active`),

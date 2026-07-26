@@ -66,25 +66,10 @@ export class TransactionsService {
   }
 
   async payByCard(cardUid: string, merchantId: string, amount: number, idempotencyKey: string): Promise<Transaction> {
-    const lockKey = `idem:${idempotencyKey}`;
-    const locked = await this.redis.acquireLock(lockKey, 5);
-    if (!locked) {
-      const existing = await this.repo.findOne({ where: { idempotencyKey } });
-      if (existing) return existing;
-      throw new BadRequestException('Request in progress. Try again.');
-    }
+    const card = await this.cardsService.findByUid(cardUid);
+    if (card.status !== 'active') throw new BadRequestException('Card is not active');
 
-    try {
-      const existing = await this.repo.findOne({ where: { idempotencyKey } });
-      if (existing) return existing;
-
-      const card = await this.cardsService.findByUid(cardUid);
-      if (card.status !== 'active') throw new BadRequestException('Card is not active');
-
-      return this.pay({ studentCode: card.student.studentCode, merchantId, amount, idempotencyKey }, merchantId);
-    } finally {
-      await this.redis.releaseLock(lockKey);
-    }
+    return this.pay({ studentCode: card.student.studentCode, merchantId, amount, idempotencyKey }, merchantId);
   }
 
   async findByStudent(studentCode: string): Promise<Transaction[]> {
