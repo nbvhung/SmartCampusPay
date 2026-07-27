@@ -7,6 +7,9 @@ export const accountApi = {
   getBalance: (studentId: string) =>
     api.get<ApiResponse<{ balance: number }>>(`/accounts/balance/${studentId}`),
 
+  findByStudent: (studentId: string) =>
+    api.get<ApiResponse<Account>>(`/accounts/student/${studentId}`),
+
   toggleFreeze: (id: string) =>
     api.patch<ApiResponse<Account>>(`/accounts/${id}/freeze`),
 };

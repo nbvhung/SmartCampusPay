@@ -20,6 +20,11 @@ export class AccountsController {
     return this.service.getBalance(studentId);
   }
 
+  @Get('student/:studentId')
+  findByStudent(@Param('studentId') studentId: string) {
+    return this.service.findByStudentId(studentId);
+  }
+
   @Patch(':id/freeze')
   toggleFreeze(@Param('id') id: string) {
     return this.service.toggleFreeze(id);
