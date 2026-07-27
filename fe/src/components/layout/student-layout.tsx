@@ -2,7 +2,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Plus, History, LogOut } from 'lucide-react';
+import { LayoutDashboard, Plus, History, Monitor, LogOut } from 'lucide-react';
 import { authApi } from '@/lib/auth-api';
 
 interface StudentLayoutProps {
@@ -50,6 +50,13 @@ export function StudentLayout({ children, title }: StudentLayoutProps) {
                   </Link>
                 );
               })}
+              <Link
+                href="/pos"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-green-600 hover:bg-green-50 transition-colors"
+              >
+                <Monitor className="w-4 h-4" />
+                POS
+              </Link>
             </nav>
           </div>
           <button

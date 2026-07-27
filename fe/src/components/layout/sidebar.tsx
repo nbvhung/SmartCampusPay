@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Users, Store, Receipt, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, Store, Receipt, Shield, Monitor, LogOut } from 'lucide-react';
 import { authApi } from '@/lib/auth-api';
 
 const navItems = [
@@ -9,6 +9,7 @@ const navItems = [
   { href: '/admin/students', label: 'Sinh viên', icon: Users },
   { href: '/admin/merchants', label: 'Điểm thanh toán', icon: Store },
   { href: '/admin/transactions', label: 'Giao dịch', icon: Receipt },
+  { href: '/admin/admins', label: 'Quản trị viên', icon: Shield },
 ];
 
 export function Sidebar() {
@@ -44,6 +45,15 @@ export function Sidebar() {
             </Link>
           );
         })}
+        <div className="pt-3 mt-3 border-t border-gray-800">
+          <Link
+            href="/pos"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-green-400 hover:bg-gray-800 hover:text-green-300 transition-colors"
+          >
+            <Monitor className="w-5 h-5 shrink-0" />
+            POS (Test)
+          </Link>
+        </div>
       </nav>
 
       <div className="p-3 border-t border-gray-800">

@@ -46,6 +46,8 @@ export default function StudentTopupPage() {
     setError('');
     setPaymentStatus('creating');
 
+    if (pollRef.current) clearInterval(pollRef.current);
+
     try {
       const res = await sepayApi.createPayment(num);
       const data = res.data.data;

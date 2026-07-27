@@ -2,9 +2,12 @@ import { Controller, Get, Post, Body, Param, Patch, UseGuards } from '@nestjs/co
 import { AuthGuard } from '@nestjs/passport';
 import { MerchantsService } from './merchants.service';
 import { CreateMerchantDto } from './dto/create-merchant.dto';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
 
 @Controller('merchants')
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(AuthGuard('jwt'), RolesGuard)
+@Roles('admin', 'super_admin')
 export class MerchantsController {
   constructor(private readonly service: MerchantsService) {}
 

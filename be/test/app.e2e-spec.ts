@@ -1,29 +1,9 @@
-import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication } from '@nestjs/common';
-import request from 'supertest';
-import { App } from 'supertest/types';
-import { AppModule } from './../src/app.module';
-
-describe('AppController (e2e)', () => {
-  let app: INestApplication<App>;
-
-  beforeEach(async () => {
-    const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [AppModule],
-    }).compile();
-
-    app = moduleFixture.createNestApplication();
-    await app.init();
-  });
-
-  it('/ (GET)', () => {
-    return request(app.getHttpServer())
-      .get('/')
-      .expect(200)
-      .expect('Hello World!');
-  });
-
-  afterEach(async () => {
-    await app.close();
-  });
-});
+// E2E tests require PostgreSQL and Redis running.
+// Run: docker compose up -d db redis
+// Then: npm run test:e2e
+//
+// TODO: Add E2E tests for:
+//   - POST /api/v1/auth/login (student + admin)
+//   - POST /api/v1/transactions/pay (with API key)
+//   - Idempotency: duplicate idempotencyKey returns same tx
+//   - GET /api/v1/auth/me (authenticated)
