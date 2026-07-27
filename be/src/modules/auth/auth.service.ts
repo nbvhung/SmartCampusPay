@@ -1,7 +1,6 @@
 import {
   Injectable,
   UnauthorizedException,
-  ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
@@ -254,7 +253,17 @@ export class AuthService {
     const admin = await this.adminsService.findById(userId);
     if (!admin) throw new UnauthorizedException('Không tìm thấy tài khoản');
 
-    throw new ForbiddenException('Chức năng chưa hỗ trợ cho admin');
+    if (!oldPassword) {
+      throw new BadRequestException('Vui lòng nhập mật khẩu cũ');
+    }
+    const validAdmin = await bcrypt.compare(oldPassword, admin.passwordHash);
+    if (!validAdmin) throw new BadRequestException('Mật khẩu cũ không đúng');
+
+    const adminPasswordHash = await bcrypt.hash(newPassword, 10);
+    await this.adminsService.updatePassword(userId, adminPasswordHash);
+
+    await this.redis.del(`refresh_token:${userId}`);
+    return { message: 'Đổi mật khẩu thành công. Vui lòng đăng nhập lại.' };
   }
 
   // ─── GET ME ─────────────────────────────────────────────────────────────────

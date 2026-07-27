@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Body, Param, Patch, UseGuards,
+  Controller, Get, Post, Body, Param, Patch, Delete, UseGuards,
   UseInterceptors, UploadedFile, ParseFilePipe, MaxFileSizeValidator, FileTypeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -7,9 +7,13 @@ import { AuthGuard } from '@nestjs/passport';
 import { StudentsService } from './students.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { CreateStudentDto } from './dto/create-student.dto';
+import { UpdateStudentDto } from './dto/update-student.dto';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from '../../common/guards/roles.guard';
 
 @Controller('students')
-@UseGuards(AuthGuard('jwt'))
+@UseGuards(AuthGuard('jwt'), RolesGuard)
+@Roles('admin', 'super_admin')
 export class StudentsController {
   constructor(
     private readonly service: StudentsService,
@@ -29,6 +33,17 @@ export class StudentsController {
   @Get(':id')
   findById(@Param('id') id: string) {
     return this.service.findById(id);
+  }
+
+  @Patch(':id')
+  update(@Param('id') id: string, @Body() dto: UpdateStudentDto) {
+    return this.service.update(id, dto as any);
+  }
+
+  @Delete(':id')
+  async remove(@Param('id') id: string) {
+    await this.service.remove(id);
+    return { message: 'Xoá sinh viên thành công' };
   }
 
   @Patch(':id/toggle')

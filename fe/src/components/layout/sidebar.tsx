@@ -1,12 +1,14 @@
 'use client';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Users, Store, Receipt, Shield, Monitor, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, Store, Receipt, Shield, CreditCard, Wallet, Monitor, LogOut } from 'lucide-react';
 import { authApi } from '@/lib/auth-api';
 
 const navItems = [
   { href: '/admin/dashboard', label: 'Tổng quan', icon: LayoutDashboard },
   { href: '/admin/students', label: 'Sinh viên', icon: Users },
+  { href: '/admin/cards', label: 'Thẻ', icon: CreditCard },
+  { href: '/admin/accounts', label: 'Ví', icon: Wallet },
   { href: '/admin/merchants', label: 'Điểm thanh toán', icon: Store },
   { href: '/admin/transactions', label: 'Giao dịch', icon: Receipt },
   { href: '/admin/admins', label: 'Quản trị viên', icon: Shield },

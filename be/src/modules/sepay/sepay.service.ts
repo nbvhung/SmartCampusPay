@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
@@ -6,6 +6,7 @@ import { Transaction, TransactionType, TransactionStatus } from '../transactions
 import { Account } from '../accounts/account.entity';
 import { AccountsService } from '../accounts/accounts.service';
 import { StudentsService } from '../students/students.service';
+import { RedisService } from '../redis/redis.service';
 
 @Injectable()
 export class SePayService {
@@ -23,6 +24,7 @@ export class SePayService {
     private readonly txRepo: Repository<Transaction>,
     private readonly accountsService: AccountsService,
     private readonly studentsService: StudentsService,
+    private readonly redis: RedisService,
   ) {
     this.apiKey = this.config.get('SEPAY_API_KEY', '');
     this.bankId = this.config.get('SEPAY_BANK_ID', '');
@@ -116,50 +118,61 @@ export class SePayService {
     }
     this.logger.log(`Parsed refCode: ${refCode}`);
 
-    const tx = await this.txRepo.findOne({ where: { referenceCode: refCode } });
-    if (!tx) {
-      this.logger.warn(`Không tìm thấy giao dịch với referenceCode: ${refCode}`);
-      return { message: 'transaction_not_found' };
-    }
-    this.logger.log(`Tìm thấy giao dịch: id=${tx.id}, status=${tx.status}, amount=${tx.amount}`);
-
-    if (tx.status === TransactionStatus.SUCCESS) {
-      this.logger.log(`Giao dịch đã được xử lý trước đó: ${refCode}`);
-      return { message: 'already_processed' };
+    const lockKey = `sepay_webhook:${refCode}`;
+    const acquired = await this.redis.acquireLock(lockKey, 30);
+    if (!acquired) {
+      this.logger.warn(`Webhook đang được xử lý bởi request khác: ${refCode}`);
+      return { message: 'processing' };
     }
 
-    if (tx.amount !== dto.amount) {
-      this.logger.warn(`Số tiền không khớp: expected=${tx.amount}, actual=${dto.amount}`);
-      return { message: 'amount_mismatch' };
+    try {
+      const tx = await this.txRepo.findOne({ where: { referenceCode: refCode } });
+      if (!tx) {
+        this.logger.warn(`Không tìm thấy giao dịch với referenceCode: ${refCode}`);
+        return { message: 'transaction_not_found' };
+      }
+      this.logger.log(`Tìm thấy giao dịch: id=${tx.id}, status=${tx.status}, amount=${tx.amount}`);
+
+      if (tx.status === TransactionStatus.SUCCESS) {
+        this.logger.log(`Giao dịch đã được xử lý trước đó: ${refCode}`);
+        return { message: 'already_processed' };
+      }
+
+      if (tx.amount !== dto.amount) {
+        this.logger.warn(`Số tiền không khớp: expected=${tx.amount}, actual=${dto.amount}`);
+        return { message: 'amount_mismatch' };
+      }
+
+      // Xử lý trong DB transaction để đảm bảo atomic
+      await this.dataSource.transaction(async (manager) => {
+        const accountRepo = manager.getRepository(Account);
+        const txRepo = manager.getRepository(Transaction);
+
+        const account = await accountRepo.findOne({ where: { studentId: tx.studentId } });
+        if (!account) {
+          throw new NotFoundException(`Không tìm thấy ví cho studentId: ${tx.studentId}`);
+        }
+        if (account.status !== 'active') {
+          throw new BadRequestException(`Ví đang bị đóng băng: ${account.status}`);
+        }
+
+        account.balance = Number(account.balance) + Number(dto.amount);
+        await accountRepo.save(account);
+        this.logger.log(`Đã cộng ${dto.amount}đ vào ví ${account.id}, balance mới: ${account.balance}`);
+
+        const currentTx = await txRepo.findOne({ where: { id: tx.id } });
+        if (currentTx && currentTx.status !== TransactionStatus.SUCCESS) {
+          currentTx.status = TransactionStatus.SUCCESS;
+          currentTx.description = `Nạp tiền qua ngân hàng - ${dto.content}`;
+          await txRepo.save(currentTx);
+        }
+      });
+
+      this.logger.log(`Nạp tiền thành công: ${tx.studentCode} +${dto.amount}đ (ref: ${refCode})`);
+      return { message: 'success' };
+    } finally {
+      await this.redis.releaseLock(lockKey);
     }
-
-    // Xử lý trong DB transaction để đảm bảo atomic
-    await this.dataSource.transaction(async (manager) => {
-      const accountRepo = manager.getRepository(Account);
-      const txRepo = manager.getRepository(Transaction);
-
-      const account = await accountRepo.findOne({ where: { studentId: tx.studentId } });
-      if (!account) {
-        throw new NotFoundException(`Không tìm thấy ví cho studentId: ${tx.studentId}`);
-      }
-      if (account.status !== 'active') {
-        throw new BadRequestException(`Ví đang bị đóng băng: ${account.status}`);
-      }
-
-      account.balance = Number(account.balance) + Number(dto.amount);
-      await accountRepo.save(account);
-      this.logger.log(`Đã cộng ${dto.amount}đ vào ví ${account.id}, balance mới: ${account.balance}`);
-
-      const currentTx = await txRepo.findOne({ where: { id: tx.id } });
-      if (currentTx && currentTx.status !== TransactionStatus.SUCCESS) {
-        currentTx.status = TransactionStatus.SUCCESS;
-        currentTx.description = `Nạp tiền qua ngân hàng - ${dto.content}`;
-        await txRepo.save(currentTx);
-      }
-    });
-
-    this.logger.log(`Nạp tiền thành công: ${tx.studentCode} +${dto.amount}đ (ref: ${refCode})`);
-    return { message: 'success' };
   }
 
   async cancelPayment(referenceCode: string, userId: string): Promise<void> {

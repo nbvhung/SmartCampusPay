@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
@@ -92,6 +92,21 @@ export class StudentsService {
     const student = await this.findById(id);
     student.isActive = !student.isActive;
     return this.repo.save(student);
+  }
+
+  async update(id: string, dto: Partial<Student>): Promise<Student> {
+    const student = await this.findById(id);
+    if (dto.studentCode && dto.studentCode !== student.studentCode) {
+      const exists = await this.repo.findOne({ where: { studentCode: dto.studentCode } });
+      if (exists) throw new ConflictException('Mã sinh viên đã tồn tại');
+    }
+    Object.assign(student, dto);
+    return this.repo.save(student);
+  }
+
+  async remove(id: string): Promise<void> {
+    const student = await this.findById(id);
+    await this.repo.remove(student);
   }
 
   // ─── BULK IMPORT TỪ FILE EXCEL ─────────────────────────────────────────────

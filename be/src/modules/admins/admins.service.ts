@@ -45,6 +45,10 @@ export class AdminsService {
     return this.repo.save(admin);
   }
 
+  async updatePassword(id: string, passwordHash: string): Promise<void> {
+    await this.repo.update(id, { passwordHash });
+  }
+
   async remove(id: string): Promise<void> {
     const admin = await this.repo.findOne({ where: { id } });
     if (!admin) throw new NotFoundException('Admin không tồn tại');

@@ -35,6 +35,10 @@ export class AccountsService {
     return this.repo.save(account);
   }
 
+  async findAll(): Promise<Account[]> {
+    return this.repo.find({ relations: { student: true } });
+  }
+
   async findByStudentId(studentId: string): Promise<Account> {
     const account = await this.repo.findOne({ where: { studentId } });
     if (!account) throw new NotFoundException('Account not found for student');

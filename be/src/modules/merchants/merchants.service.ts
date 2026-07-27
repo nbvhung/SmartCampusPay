@@ -55,4 +55,9 @@ export class MerchantsService {
     if (dto.location !== undefined) merchant.location = dto.location;
     return this.repo.save(merchant);
   }
+
+  async remove(id: string): Promise<void> {
+    const merchant = await this.findById(id);
+    await this.repo.remove(merchant);
+  }
 }

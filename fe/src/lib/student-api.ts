@@ -11,6 +11,9 @@ export const studentApi = {
   create: (data: { studentCode: string; fullName: string; email: string; faculty: string; phone?: string; dateOfBirth?: string }) =>
     api.post<ApiResponse<Student>>('/students', data),
 
+  update: (id: string, data: { fullName?: string; email?: string; phone?: string; faculty?: string }) =>
+    api.patch<ApiResponse<Student>>(`/students/${id}`, data),
+
   toggleActive: (id: string) =>
     api.patch<ApiResponse<Student>>(`/students/${id}/toggle-active`),
 
