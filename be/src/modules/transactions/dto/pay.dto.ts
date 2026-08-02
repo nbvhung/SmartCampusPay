@@ -1,4 +1,11 @@
-import { IsString, IsNumber, Min, Max, IsUUID, IsOptional } from 'class-validator';
+import {
+  IsString,
+  IsNumber,
+  Min,
+  Max,
+  IsUUID,
+  IsOptional,
+} from 'class-validator';
 
 export class PayDto {
   @IsString()

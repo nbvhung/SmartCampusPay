@@ -1,5 +1,12 @@
 import {
-  Controller, Post, Get, Body, Res, Req, HttpCode, HttpStatus,
+  Controller,
+  Post,
+  Get,
+  Body,
+  Res,
+  Req,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { Public } from '../../common/decorators/public.decorator';
@@ -24,7 +31,10 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: any) {
-    const result = await this.service.studentLogin(dto.studentCode, dto.password);
+    const result = await this.service.studentLogin(
+      dto.studentCode,
+      dto.password,
+    );
     this.setTokenCookies(res, result.accessToken, result.refreshToken);
     return {
       mustChangePassword: result.mustChangePassword,
@@ -37,8 +47,14 @@ export class AuthController {
   @Public()
   @Post('login/unified')
   @HttpCode(HttpStatus.OK)
-  async unifiedLogin(@Body() dto: UnifiedLoginDto, @Res({ passthrough: true }) res: any) {
-    const result = await this.service.unifiedLogin(dto.identifier, dto.password);
+  async unifiedLogin(
+    @Body() dto: UnifiedLoginDto,
+    @Res({ passthrough: true }) res: any,
+  ) {
+    const result = await this.service.unifiedLogin(
+      dto.identifier,
+      dto.password,
+    );
     this.setTokenCookies(res, result.accessToken, result.refreshToken);
     return {
       mustChangePassword: result.mustChangePassword,
@@ -51,7 +67,10 @@ export class AuthController {
   @Public()
   @Post('admin/login')
   @HttpCode(HttpStatus.OK)
-  async adminLogin(@Body() dto: AdminLoginDto, @Res({ passthrough: true }) res: any) {
+  async adminLogin(
+    @Body() dto: AdminLoginDto,
+    @Res({ passthrough: true }) res: any,
+  ) {
     const result = await this.service.adminLogin(dto.username, dto.password);
     this.setTokenCookies(res, result.accessToken, result.refreshToken);
     return { user: result.user };
@@ -80,10 +99,7 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  async logout(
-    @CurrentUser() user: any,
-    @Res({ passthrough: true }) res: any,
-  ) {
+  async logout(@CurrentUser() user: any, @Res({ passthrough: true }) res: any) {
     await this.service.logout(user.id, user.jti, user.exp);
     this.clearTokenCookies(res);
     return { message: 'Đăng xuất thành công' };

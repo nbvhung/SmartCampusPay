@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Body, Param, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { TransactionsService } from './transactions.service';
 import { PayDto } from './dto/pay.dto';
@@ -17,8 +25,16 @@ export class TransactionsController {
 
   @Post('pay/card')
   @UseGuards(ApiKeyGuard)
-  async payByCard(@Body() dto: { cardUid: string; amount: number; idempotencyKey: string }, @Req() req: any) {
-    return this.service.payByCard(dto.cardUid, req.merchant.id, dto.amount, dto.idempotencyKey);
+  async payByCard(
+    @Body() dto: { cardUid: string; amount: number; idempotencyKey: string },
+    @Req() req: any,
+  ) {
+    return this.service.payByCard(
+      dto.cardUid,
+      req.merchant.id,
+      dto.amount,
+      dto.idempotencyKey,
+    );
   }
 
   @Get()

@@ -1,12 +1,34 @@
-import { Injectable, Logger, BadRequestException, NotFoundException, UnauthorizedException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  BadRequestException,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
-import { Transaction, TransactionType, TransactionStatus } from '../transactions/transaction.entity';
-import { Account } from '../accounts/account.entity';
+import {
+  Transaction,
+  TransactionType,
+  TransactionStatus,
+} from '../transactions/transaction.entity';
+import { Account, AccountStatus } from '../accounts/account.entity';
+import { Student } from '../students/student.entity';
 import { AccountsService } from '../accounts/accounts.service';
 import { StudentsService } from '../students/students.service';
+import { TopupPendingService } from '../topup-pending/topup-pending.service';
 import { RedisService } from '../redis/redis.service';
+
+interface SePayWebhookDto {
+  id: number;
+  amount: number;
+  content: string;
+  transferType: string;
+  sender: string;
+  bankRef: string;
+  bankName: string;
+}
 
 @Injectable()
 export class SePayService {
@@ -16,6 +38,7 @@ export class SePayService {
   private readonly bankName: string;
   private readonly accountNumber: string;
   private readonly sepayQrBase: string;
+  private readonly staticQrDescription: string;
 
   constructor(
     private readonly config: ConfigService,
@@ -24,13 +47,21 @@ export class SePayService {
     private readonly txRepo: Repository<Transaction>,
     private readonly accountsService: AccountsService,
     private readonly studentsService: StudentsService,
+    private readonly topupPendingService: TopupPendingService,
     private readonly redis: RedisService,
   ) {
     this.apiKey = this.config.get('SEPAY_API_KEY', '');
     this.bankId = this.config.get('SEPAY_BANK_ID', '');
     this.bankName = this.config.get('SEPAY_BANK_NAME', '');
     this.accountNumber = this.config.get('SEPAY_ACCOUNT_NUMBER', '');
-    this.sepayQrBase = this.config.get('SEPAY_QR_BASE', 'https://qr.sepay.vn/img');
+    this.sepayQrBase = this.config.get(
+      'SEPAY_QR_BASE',
+      'https://qr.sepay.vn/img',
+    );
+    this.staticQrDescription = this.config.get(
+      'SEPAY_STATIC_QR_DES',
+      'Nap tien SmartCampusPay - ghi ro ma SV',
+    );
   }
 
   verifyApiKey(authHeader: string | undefined): void {
@@ -60,7 +91,30 @@ export class SePayService {
     return `${this.sepayQrBase}?${params.toString()}`;
   }
 
-  async createPayment(studentCode: string, amount: number): Promise<{
+  createStaticQr(): {
+    qrUrl: string;
+    bankName: string;
+    accountNumber: string;
+    description: string;
+  } {
+    const params = new URLSearchParams({
+      acc: this.accountNumber,
+      des: this.staticQrDescription,
+    });
+    if (this.bankId) params.set('bank', this.bankId);
+    else if (this.bankName) params.set('bank', this.bankName);
+    return {
+      qrUrl: `${this.sepayQrBase}?${params.toString()}`,
+      bankName: this.bankName,
+      accountNumber: this.accountNumber,
+      description: this.staticQrDescription,
+    };
+  }
+
+  async createPayment(
+    studentCode: string,
+    amount: number,
+  ): Promise<{
     referenceCode: string;
     qrUrl: string;
     amount: number;
@@ -88,7 +142,12 @@ export class SePayService {
       accountId: (await this.accountsService.findByStudentId(student.id)).id,
     });
 
-    return { referenceCode: refCode, qrUrl, amount, expiresAt: expiresAt.toISOString() };
+    return {
+      referenceCode: refCode,
+      qrUrl,
+      amount,
+      expiresAt: expiresAt.toISOString(),
+    };
   }
 
   async handleWebhook(body: any): Promise<{ message: string }> {
@@ -96,80 +155,69 @@ export class SePayService {
     this.logger.log(JSON.stringify(body, null, 2));
     this.logger.log(`===============================`);
 
-    const rawContent = body.content ?? body.code ?? body.description ?? body.transactionContent ?? '';
-    const dto = {
-      id: Number(body.id) || 0,
-      amount: Number(String(body.transferAmount ?? body.amount).replace(/[^0-9.-]/g, '')) || 0,
-      content: String(rawContent).trim(),
-      transferType: String(body.transferType ?? body.type ?? '').toLowerCase().trim(),
-    };
-
-    this.logger.log(`SePay webhook parsed: id=${dto.id}, amount=${dto.amount}, content="${dto.content}", transferType="${dto.transferType}"`);
+    const dto = this.parseWebhook(body);
+    this.logger.log(
+      `SePay webhook parsed: id=${dto.id}, amount=${dto.amount}, content="${dto.content}", transferType="${dto.transferType}", sender="${dto.sender}"`,
+    );
 
     if (dto.transferType !== 'in') {
-      this.logger.warn(`Bỏ qua giao dịch không phải tiền vào: ${dto.transferType}`);
+      this.logger.warn(
+        `Bỏ qua giao dịch không phải tiền vào: ${dto.transferType}`,
+      );
       return { message: 'ignored' };
     }
 
-    const refCode = this.parseRefCode(dto.content);
-    if (!refCode) {
-      this.logger.warn(`Không tìm thấy reference code trong nội dung: "${dto.content}"`);
-      return { message: 'no_ref_code' };
+    const transferId = dto.id ? String(dto.id) : null;
+    if (!transferId) {
+      this.logger.warn(
+        `Thiếu transferId, không thể xử lý tự động: "${dto.content}"`,
+      );
+      return { message: 'missing_transfer_id' };
     }
-    this.logger.log(`Parsed refCode: ${refCode}`);
 
-    const lockKey = `sepay_webhook:${refCode}`;
+    const lockKey = `sepay_webhook:${transferId}`;
     const acquired = await this.redis.acquireLock(lockKey, 30);
     if (!acquired) {
-      this.logger.warn(`Webhook đang được xử lý bởi request khác: ${refCode}`);
+      this.logger.warn(
+        `Webhook đang được xử lý bởi request khác: ${transferId}`,
+      );
       return { message: 'processing' };
     }
 
     try {
-      const tx = await this.txRepo.findOne({ where: { referenceCode: refCode } });
-      if (!tx) {
-        this.logger.warn(`Không tìm thấy giao dịch với referenceCode: ${refCode}`);
-        return { message: 'transaction_not_found' };
-      }
-      this.logger.log(`Tìm thấy giao dịch: id=${tx.id}, status=${tx.status}, amount=${tx.amount}`);
+      const idemKey = `sepay_${transferId}`;
 
-      if (tx.status === TransactionStatus.SUCCESS) {
-        this.logger.log(`Giao dịch đã được xử lý trước đó: ${refCode}`);
-        return { message: 'already_processed' };
-      }
-
-      if (tx.amount !== dto.amount) {
-        this.logger.warn(`Số tiền không khớp: expected=${tx.amount}, actual=${dto.amount}`);
-        return { message: 'amount_mismatch' };
-      }
-
-      // Xử lý trong DB transaction để đảm bảo atomic
-      await this.dataSource.transaction(async (manager) => {
-        const accountRepo = manager.getRepository(Account);
-        const txRepo = manager.getRepository(Transaction);
-
-        const account = await accountRepo.findOne({ where: { studentId: tx.studentId } });
-        if (!account) {
-          throw new NotFoundException(`Không tìm thấy ví cho studentId: ${tx.studentId}`);
-        }
-        if (account.status !== 'active') {
-          throw new BadRequestException(`Ví đang bị đóng băng: ${account.status}`);
-        }
-
-        account.balance = Number(account.balance) + Number(dto.amount);
-        await accountRepo.save(account);
-        this.logger.log(`Đã cộng ${dto.amount}đ vào ví ${account.id}, balance mới: ${account.balance}`);
-
-        const currentTx = await txRepo.findOne({ where: { id: tx.id } });
-        if (currentTx && currentTx.status !== TransactionStatus.SUCCESS) {
-          currentTx.status = TransactionStatus.SUCCESS;
-          currentTx.description = `Nạp tiền qua ngân hàng - ${dto.content}`;
-          await txRepo.save(currentTx);
-        }
+      const existingByKey = await this.txRepo.findOne({
+        where: { idempotencyKey: idemKey },
       });
+      if (existingByKey) {
+        this.logger.log(`Giao dịch đã được xử lý trước đó: ${idemKey}`);
+        return {
+          message:
+            existingByKey.status === TransactionStatus.SUCCESS
+              ? 'already_processed'
+              : 'processing',
+        };
+      }
 
-      this.logger.log(`Nạp tiền thành công: ${tx.studentCode} +${dto.amount}đ (ref: ${refCode})`);
-      return { message: 'success' };
+      const result = await this.tryMatchByRefCode(dto);
+      if (result) return result;
+
+      const resultByStudent = await this.tryMatchByStudentCode(dto, idemKey);
+      if (resultByStudent) return resultByStudent;
+
+      this.logger.warn(
+        `Không khớp refCode/mã SV, đưa vào hàng đợi: "${dto.content}"`,
+      );
+      await this.topupPendingService.createFromWebhook({
+        transferId,
+        amount: dto.amount,
+        content: dto.content,
+        sender: dto.sender,
+        bankRef: dto.bankRef,
+        bankName: dto.bankName,
+      });
+      return { message: 'pending_match' };
     } finally {
       await this.redis.releaseLock(lockKey);
     }
@@ -178,7 +226,8 @@ export class SePayService {
   async cancelPayment(referenceCode: string, userId: string): Promise<void> {
     const tx = await this.txRepo.findOne({ where: { referenceCode } });
     if (!tx) throw new NotFoundException('Giao dịch không tồn tại');
-    if (tx.studentId !== userId) throw new NotFoundException('Giao dịch không tồn tại');
+    if (tx.studentId !== userId)
+      throw new NotFoundException('Giao dịch không tồn tại');
     if (tx.status !== TransactionStatus.PENDING) return;
 
     tx.status = TransactionStatus.FAILED;
@@ -186,7 +235,10 @@ export class SePayService {
     await this.txRepo.save(tx);
   }
 
-  async checkStatus(referenceCode: string, user: any): Promise<{
+  async checkStatus(
+    referenceCode: string,
+    user: any,
+  ): Promise<{
     status: string;
     amount: number;
     createdAt: string;
@@ -196,7 +248,163 @@ export class SePayService {
     if (user.role === 'student' && tx.studentId !== user.id) {
       throw new NotFoundException('Giao dịch không tồn tại');
     }
-    return { status: tx.status, amount: tx.amount, createdAt: tx.createdAt.toISOString() };
+    return {
+      status: tx.status,
+      amount: tx.amount,
+      createdAt: tx.createdAt.toISOString(),
+    };
+  }
+
+  // ─── PRIVATE HELPERS ──────────────────────────────────────────────────────
+
+  private parseWebhook(body: any): SePayWebhookDto {
+    const rawContent =
+      body.content ??
+      body.code ??
+      body.description ??
+      body.transactionContent ??
+      '';
+    return {
+      id: Number(body.id) || 0,
+      amount:
+        Number(
+          String(body.transferAmount ?? body.amount).replace(/[^0-9.-]/g, ''),
+        ) || 0,
+      content: String(rawContent).trim(),
+      transferType: String(body.transferType ?? body.type ?? '')
+        .toLowerCase()
+        .trim(),
+      sender: String(body.sender ?? '').trim(),
+      bankRef: String(body.tid ?? body.refNo ?? '').trim(),
+      bankName: String(body.bankName ?? body.bankAbbreviation ?? '').trim(),
+    };
+  }
+
+  private async tryMatchByRefCode(
+    dto: SePayWebhookDto,
+  ): Promise<{ message: string } | null> {
+    const refCode = this.parseRefCode(dto.content);
+    if (!refCode) return null;
+
+    const tx = await this.txRepo.findOne({ where: { referenceCode: refCode } });
+    if (!tx) {
+      this.logger.warn(
+        `Không tìm thấy giao dịch với referenceCode: ${refCode}`,
+      );
+      return { message: 'transaction_not_found' };
+    }
+
+    if (tx.status === TransactionStatus.SUCCESS) {
+      this.logger.log(`Giao dịch đã được xử lý trước đó: ${refCode}`);
+      return { message: 'already_processed' };
+    }
+
+    if (tx.amount !== dto.amount) {
+      this.logger.warn(
+        `Số tiền không khớp: expected=${tx.amount}, actual=${dto.amount}`,
+      );
+      return { message: 'amount_mismatch' };
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      const account = await manager.findOne(Account, {
+        where: { studentId: tx.studentId },
+      });
+      if (!account)
+        throw new NotFoundException(
+          `Không tìm thấy ví cho studentId: ${tx.studentId}`,
+        );
+      if (account.status !== AccountStatus.ACTIVE)
+        throw new BadRequestException(
+          `Ví đang bị đóng băng: ${account.status}`,
+        );
+
+      account.balance = Number(account.balance) + Number(dto.amount);
+      await manager.save(account);
+      this.logger.log(
+        `Đã cộng ${dto.amount}đ vào ví ${account.id}, balance mới: ${account.balance}`,
+      );
+
+      const currentTx = await manager.findOne(Transaction, {
+        where: { id: tx.id },
+      });
+      if (currentTx && currentTx.status !== TransactionStatus.SUCCESS) {
+        currentTx.status = TransactionStatus.SUCCESS;
+        currentTx.description = `Nạp tiền qua ngân hàng - ${dto.content}`;
+        await manager.save(currentTx);
+      }
+    });
+
+    this.logger.log(
+      `Nạp tiền thành công (refCode): ${tx.studentCode} +${dto.amount}đ (ref: ${refCode})`,
+    );
+    return { message: 'success' };
+  }
+
+  private async tryMatchByStudentCode(
+    dto: SePayWebhookDto,
+    idemKey: string,
+  ): Promise<{ message: string } | null> {
+    const student = await this.matchStudentByContent(dto.content);
+    if (!student) return null;
+
+    if (dto.amount < 1000 || dto.amount > 5000000) {
+      this.logger.warn(`Số tiền ngoài phạm vi cho phép: ${dto.amount}`);
+      return { message: 'amount_out_of_range' };
+    }
+
+    await this.dataSource.transaction(async (manager) => {
+      const account = await manager.findOne(Account, {
+        where: { studentId: student.id },
+      });
+      if (!account)
+        throw new NotFoundException(
+          `Không tìm thấy ví cho sinh viên ${student.studentCode}`,
+        );
+      if (account.status !== AccountStatus.ACTIVE)
+        throw new BadRequestException(
+          `Ví đang bị đóng băng: ${account.status}`,
+        );
+
+      account.balance = Number(account.balance) + Number(dto.amount);
+      await manager.save(account);
+      this.logger.log(
+        `Đã cộng ${dto.amount}đ vào ví ${account.id}, balance mới: ${account.balance}`,
+      );
+
+      const tx = manager.create(Transaction, {
+        amount: dto.amount,
+        type: TransactionType.CREDIT,
+        status: TransactionStatus.SUCCESS,
+        idempotencyKey: idemKey,
+        description: `Nạp tiền qua ngân hàng - ${dto.content}`,
+        studentCode: student.studentCode,
+        studentId: student.id,
+        accountId: account.id,
+      });
+      await manager.save(tx);
+    });
+
+    this.logger.log(
+      `Nạp tiền thành công (mã SV): ${student.studentCode} +${dto.amount}đ`,
+    );
+    return { message: 'success' };
+  }
+
+  private async matchStudentByContent(
+    content: string,
+  ): Promise<Student | null> {
+    const digitGroups = content.match(/\d{6,}/g);
+    if (!digitGroups) return null;
+
+    const seen = new Set<string>();
+    for (const group of digitGroups) {
+      if (seen.has(group)) continue;
+      seen.add(group);
+      const student = await this.studentsService.findByCode(group);
+      if (student && student.isActive) return student;
+    }
+    return null;
   }
 
   private parseRefCode(content: string): string | null {

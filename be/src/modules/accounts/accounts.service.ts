@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Account, AccountStatus } from './account.entity';
@@ -83,7 +87,10 @@ export class AccountsService {
   async toggleFreeze(id: string): Promise<Account> {
     const account = await this.repo.findOne({ where: { id } });
     if (!account) throw new NotFoundException('Account not found');
-    account.status = account.status === AccountStatus.ACTIVE ? AccountStatus.FROZEN : AccountStatus.ACTIVE;
+    account.status =
+      account.status === AccountStatus.ACTIVE
+        ? AccountStatus.FROZEN
+        : AccountStatus.ACTIVE;
     return this.repo.save(account);
   }
 }

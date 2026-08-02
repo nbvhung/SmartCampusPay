@@ -1,10 +1,28 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ICardReader, CardReadResult } from '../interfaces/icard-reader.interface';
+import {
+  ICardReader,
+  CardReadResult,
+} from '../interfaces/icard-reader.interface';
 
 const MOCK_CARDS: CardReadResult[] = [
-  { uid: 'MOCK-UID-00001', chipType: 'MIFARE', rawData: 'hex:deadbeef0101', timestamp: new Date() },
-  { uid: 'MOCK-UID-00002', chipType: 'MIFARE', rawData: 'hex:deadbeef0102', timestamp: new Date() },
-  { uid: 'MOCK-UID-00003', chipType: 'MIFARE', rawData: 'hex:deadbeef0103', timestamp: new Date() },
+  {
+    uid: 'MOCK-UID-00001',
+    chipType: 'MIFARE',
+    rawData: 'hex:deadbeef0101',
+    timestamp: new Date(),
+  },
+  {
+    uid: 'MOCK-UID-00002',
+    chipType: 'MIFARE',
+    rawData: 'hex:deadbeef0102',
+    timestamp: new Date(),
+  },
+  {
+    uid: 'MOCK-UID-00003',
+    chipType: 'MIFARE',
+    rawData: 'hex:deadbeef0103',
+    timestamp: new Date(),
+  },
 ];
 
 @Injectable()

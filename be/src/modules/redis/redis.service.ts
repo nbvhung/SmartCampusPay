@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
@@ -17,7 +22,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.client.on('connect', () => this.logger.log('Redis connected'));
-    this.client.on('error', (err) => this.logger.error(`Redis error: ${err.message}`));
+    this.client.on('error', (err) =>
+      this.logger.error(`Redis error: ${err.message}`),
+    );
   }
 
   async onModuleDestroy() {
@@ -54,14 +61,24 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   async acquireLock(lockKey: string, ttlSec = 5): Promise<boolean> {
     if (this.client.status !== 'ready') {
-      this.logger.warn(`Redis not ready (${this.client.status}), skipping lock`);
+      this.logger.warn(
+        `Redis not ready (${this.client.status}), skipping lock`,
+      );
       return true;
     }
     try {
-      const result = await this.client.set(`lock:${lockKey}`, '1', 'PX', ttlSec * 1000, 'NX');
+      const result = await this.client.set(
+        `lock:${lockKey}`,
+        '1',
+        'PX',
+        ttlSec * 1000,
+        'NX',
+      );
       return result === 'OK';
     } catch (err) {
-      this.logger.warn(`Redis lock failed, proceeding without lock: ${err.message}`);
+      this.logger.warn(
+        `Redis lock failed, proceeding without lock: ${err.message}`,
+      );
       return true;
     }
   }

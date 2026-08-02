@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Body, Param, Patch, Delete, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Patch,
+  Delete,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AdminsService } from './admins.service';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -13,8 +22,21 @@ export class AdminsController {
 
   @Post()
   @Roles('super_admin')
-  async create(@Body() body: { username: string; password: string; fullName: string; role?: 'admin' | 'super_admin' }) {
-    return this.service.create(body.username, body.password, body.fullName, body.role);
+  async create(
+    @Body()
+    body: {
+      username: string;
+      password: string;
+      fullName: string;
+      role?: 'admin' | 'super_admin';
+    },
+  ) {
+    return this.service.create(
+      body.username,
+      body.password,
+      body.fullName,
+      body.role,
+    );
   }
 
   @Get()
@@ -29,7 +51,10 @@ export class AdminsController {
 
   @Patch(':id')
   @Roles('super_admin')
-  async update(@Param('id') id: string, @Body() body: { fullName?: string; isActive?: boolean }) {
+  async update(
+    @Param('id') id: string,
+    @Body() body: { fullName?: string; isActive?: boolean },
+  ) {
     return this.service.update(id, body);
   }
 

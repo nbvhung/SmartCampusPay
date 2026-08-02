@@ -1,5 +1,8 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { ICardReader, CardReadResult } from './interfaces/icard-reader.interface';
+import {
+  ICardReader,
+  CardReadResult,
+} from './interfaces/icard-reader.interface';
 import { MockCardReader } from './mock/mock-card-reader';
 
 @Injectable()

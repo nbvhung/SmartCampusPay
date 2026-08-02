@@ -16,7 +16,7 @@ import { AccountsService } from '../accounts/accounts.service';
 import { CardsService } from '../cards/cards.service';
 import { RedisService } from '../redis/redis.service';
 
-const ACCESS_TTL_SEC = 15 * 60;       // 15 phút
+const ACCESS_TTL_SEC = 15 * 60; // 15 phút
 const REFRESH_TTL_SEC = 7 * 24 * 3600; // 7 ngày
 
 @Injectable()
@@ -51,8 +51,11 @@ export class AuthService {
       throw new UnauthorizedException('Mã sinh viên hoặc mật khẩu không đúng');
     }
 
-    const valid = student.passwordHash && await bcrypt.compare(password, student.passwordHash);
-    if (!valid) throw new UnauthorizedException('Mã sinh viên hoặc mật khẩu không đúng');
+    const valid =
+      student.passwordHash &&
+      (await bcrypt.compare(password, student.passwordHash));
+    if (!valid)
+      throw new UnauthorizedException('Mã sinh viên hoặc mật khẩu không đúng');
 
     // Tự động tạo account nếu chưa có
     await this.accountsService.createAccountIfNotExists(student.id);
@@ -97,10 +100,16 @@ export class AuthService {
       throw new UnauthorizedException('Tên đăng nhập hoặc mật khẩu không đúng');
     }
 
-    const valid = admin.passwordHash && await bcrypt.compare(password, admin.passwordHash);
-    if (!valid) throw new UnauthorizedException('Tên đăng nhập hoặc mật khẩu không đúng');
+    const valid =
+      admin.passwordHash &&
+      (await bcrypt.compare(password, admin.passwordHash));
+    if (!valid)
+      throw new UnauthorizedException('Tên đăng nhập hoặc mật khẩu không đúng');
 
-    const { accessToken, refreshToken } = await this.issueTokenPair(admin.id, admin.role);
+    const { accessToken, refreshToken } = await this.issueTokenPair(
+      admin.id,
+      admin.role,
+    );
 
     return {
       accessToken,
@@ -131,7 +140,9 @@ export class AuthService {
     });
 
     if (student && student.isActive) {
-      const valid = student.passwordHash && await bcrypt.compare(password, student.passwordHash);
+      const valid =
+        student.passwordHash &&
+        (await bcrypt.compare(password, student.passwordHash));
       if (valid) {
         const { accessToken, refreshToken } = await this.issueTokenPair(
           student.id,
@@ -155,9 +166,14 @@ export class AuthService {
     // Thử admin
     const admin = await this.adminsService.findByUsername(identifier);
     if (admin && admin.isActive) {
-      const valid = admin.passwordHash && await bcrypt.compare(password, admin.passwordHash);
+      const valid =
+        admin.passwordHash &&
+        (await bcrypt.compare(password, admin.passwordHash));
       if (valid) {
-        const { accessToken, refreshToken } = await this.issueTokenPair(admin.id, admin.role);
+        const { accessToken, refreshToken } = await this.issueTokenPair(
+          admin.id,
+          admin.role,
+        );
         return {
           accessToken,
           refreshToken,
@@ -166,13 +182,15 @@ export class AuthService {
             id: admin.id,
             username: admin.username,
             fullName: admin.fullName,
-            role: admin.role as 'admin' | 'super_admin',
+            role: admin.role,
           },
         };
       }
     }
 
-    throw new UnauthorizedException('Mã sinh viên/tên đăng nhập hoặc mật khẩu không đúng');
+    throw new UnauthorizedException(
+      'Mã sinh viên/tên đăng nhập hoặc mật khẩu không đúng',
+    );
   }
 
   // ─── REFRESH TOKEN ──────────────────────────────────────────────────────────
@@ -184,13 +202,17 @@ export class AuthService {
         secret: this.config.get('JWT_REFRESH_SECRET'),
       });
     } catch {
-      throw new UnauthorizedException('Refresh token không hợp lệ hoặc đã hết hạn');
+      throw new UnauthorizedException(
+        'Refresh token không hợp lệ hoặc đã hết hạn',
+      );
     }
 
     const userId = payload.sub;
     const storedHash = await this.redis.get(`refresh_token:${userId}`);
     if (!storedHash) {
-      throw new UnauthorizedException('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại');
+      throw new UnauthorizedException(
+        'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại',
+      );
     }
 
     const match = await bcrypt.compare(incomingRefreshToken, storedHash);
@@ -242,7 +264,10 @@ export class AuthService {
       }
 
       const passwordHash = await bcrypt.hash(newPassword, 10);
-      await this.studentRepo.update(userId, { passwordHash, mustChangePassword: false });
+      await this.studentRepo.update(userId, {
+        passwordHash,
+        mustChangePassword: false,
+      });
 
       // Xoá toàn bộ session cũ (force re-login)
       await this.redis.del(`refresh_token:${userId}`);

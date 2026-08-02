@@ -14,6 +14,7 @@ import { MerchantsModule } from './modules/merchants/merchants.module';
 import { HardwareModule } from './modules/hardware/hardware.module';
 import { RedisModule } from './modules/redis/redis.module';
 import { SePayModule } from './modules/sepay/sepay.module';
+import { TopupPendingModule } from './modules/topup-pending/topup-pending.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { SePayModule } from './modules/sepay/sepay.module';
     HardwareModule,
     RedisModule,
     SePayModule,
+    TopupPendingModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

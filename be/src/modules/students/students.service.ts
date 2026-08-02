@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
@@ -20,7 +25,9 @@ export class StudentsService {
   ) {}
 
   async create(dto: CreateStudentDto): Promise<Student> {
-    const exists = await this.repo.findOne({ where: { studentCode: dto.studentCode } });
+    const exists = await this.repo.findOne({
+      where: { studentCode: dto.studentCode },
+    });
     if (exists) throw new ConflictException('Mã sinh viên đã tồn tại');
 
     const queryRunner = this.dataSource.createQueryRunner();
@@ -28,7 +35,10 @@ export class StudentsService {
     await queryRunner.startTransaction();
 
     try {
-      const student = queryRunner.manager.create(Student, dto as Partial<Student>);
+      const student = queryRunner.manager.create(
+        Student,
+        dto as Partial<Student>,
+      );
 
       // Nếu có dateOfBirth thì sinh password mặc định ddmmyyyy
       if (dto.dateOfBirth) {
@@ -97,7 +107,9 @@ export class StudentsService {
   async update(id: string, dto: Partial<Student>): Promise<Student> {
     const student = await this.findById(id);
     if (dto.studentCode && dto.studentCode !== student.studentCode) {
-      const exists = await this.repo.findOne({ where: { studentCode: dto.studentCode } });
+      const exists = await this.repo.findOne({
+        where: { studentCode: dto.studentCode },
+      });
       if (exists) throw new ConflictException('Mã sinh viên đã tồn tại');
     }
     Object.assign(student, dto);
@@ -139,7 +151,14 @@ export class StudentsService {
         return;
       }
 
-      rows.push({ studentCode, fullName, email, phone, faculty, dateOfBirth: String(dobRaw) });
+      rows.push({
+        studentCode,
+        fullName,
+        email,
+        phone,
+        faculty,
+        dateOfBirth: String(dobRaw),
+      });
     });
 
     // Xử lý từng row
@@ -150,7 +169,9 @@ export class StudentsService {
       await queryRunner.startTransaction();
 
       try {
-        const exists = await queryRunner.manager.findOne(Student, { where: { studentCode: row.studentCode } });
+        const exists = await queryRunner.manager.findOne(Student, {
+          where: { studentCode: row.studentCode },
+        });
         if (exists) {
           result.skipped++;
           await queryRunner.rollbackTransaction();
@@ -225,7 +246,9 @@ export class StudentsService {
     // dd/mm/yyyy
     const parts = raw.split('/');
     if (parts.length === 3) {
-      return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+      return new Date(
+        `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`,
+      );
     }
     // yyyy-mm-dd
     return new Date(raw);

@@ -1,6 +1,17 @@
 import {
-  Controller, Get, Post, Body, Param, Patch, Delete, UseGuards,
-  UseInterceptors, UploadedFile, ParseFilePipe, MaxFileSizeValidator, FileTypeValidator,
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Patch,
+  Delete,
+  UseGuards,
+  UseInterceptors,
+  UploadedFile,
+  ParseFilePipe,
+  MaxFileSizeValidator,
+  FileTypeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthGuard } from '@nestjs/passport';
@@ -83,7 +94,8 @@ export class StudentsController {
         validators: [
           new MaxFileSizeValidator({ maxSize: 10 * 1024 * 1024 }), // 10MB
           new FileTypeValidator({
-            fileType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            fileType:
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
           }),
         ],
         fileIsRequired: true,

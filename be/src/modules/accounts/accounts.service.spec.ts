@@ -55,7 +55,9 @@ describe('AccountsService', () => {
 
     it('should throw if account not found', async () => {
       repo.findOne.mockResolvedValue(null);
-      await expect(service.getBalance('nonexistent')).rejects.toThrow(NotFoundException);
+      await expect(service.getBalance('nonexistent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 
@@ -70,12 +72,18 @@ describe('AccountsService', () => {
     });
 
     it('should throw if amount is not positive', async () => {
-      await expect(service.topup('student-uuid', -1000)).rejects.toThrow(BadRequestException);
+      await expect(service.topup('student-uuid', -1000)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should throw if account is frozen', async () => {
-      repo.findOne.mockResolvedValue(createMockAccount({ status: AccountStatus.FROZEN }));
-      await expect(service.topup('student-uuid', 50000)).rejects.toThrow(BadRequestException);
+      repo.findOne.mockResolvedValue(
+        createMockAccount({ status: AccountStatus.FROZEN }),
+      );
+      await expect(service.topup('student-uuid', 50000)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -83,7 +91,11 @@ describe('AccountsService', () => {
     it('should deduct balance within limit', async () => {
       const account = createMockAccount({ balance: 200000, dailySpent: 50000 });
       repo.findOne.mockResolvedValue(account);
-      repo.save.mockResolvedValue({ ...account, balance: 150000, dailySpent: 100000 });
+      repo.save.mockResolvedValue({
+        ...account,
+        balance: 150000,
+        dailySpent: 100000,
+      });
 
       const result = await service.debit('student-uuid', 50000);
       expect(result.balance).toBe(150000);
@@ -92,17 +104,31 @@ describe('AccountsService', () => {
 
     it('should throw if insufficient balance', async () => {
       repo.findOne.mockResolvedValue(createMockAccount({ balance: 10000 }));
-      await expect(service.debit('student-uuid', 50000)).rejects.toThrow(BadRequestException);
+      await expect(service.debit('student-uuid', 50000)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should throw if daily limit exceeded', async () => {
-      repo.findOne.mockResolvedValue(createMockAccount({ balance: 500000, dailySpent: 480000, dailyLimit: 500000 }));
-      await expect(service.debit('student-uuid', 50000)).rejects.toThrow(BadRequestException);
+      repo.findOne.mockResolvedValue(
+        createMockAccount({
+          balance: 500000,
+          dailySpent: 480000,
+          dailyLimit: 500000,
+        }),
+      );
+      await expect(service.debit('student-uuid', 50000)).rejects.toThrow(
+        BadRequestException,
+      );
     });
 
     it('should throw if account is not active', async () => {
-      repo.findOne.mockResolvedValue(createMockAccount({ status: AccountStatus.FROZEN }));
-      await expect(service.debit('student-uuid', 10000)).rejects.toThrow(BadRequestException);
+      repo.findOne.mockResolvedValue(
+        createMockAccount({ status: AccountStatus.FROZEN }),
+      );
+      await expect(service.debit('student-uuid', 10000)).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 

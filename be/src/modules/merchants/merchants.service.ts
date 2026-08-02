@@ -1,4 +1,8 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Merchant } from './merchant.entity';
@@ -17,7 +21,9 @@ export class MerchantsService {
     return `mcp_${crypto.randomBytes(24).toString('hex')}`;
   }
 
-  async create(dto: CreateMerchantDto): Promise<{ merchant: Merchant; rawApiKey: string }> {
+  async create(
+    dto: CreateMerchantDto,
+  ): Promise<{ merchant: Merchant; rawApiKey: string }> {
     const rawKey = this.generateApiKey();
     const hashedKey = await bcrypt.hash(rawKey, 10);
     const merchant = this.repo.create({ ...dto, apiKey: hashedKey });

@@ -1,9 +1,16 @@
 import {
-  Injectable, NotFoundException, BadRequestException, Logger,
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Transaction, TransactionType, TransactionStatus } from './transaction.entity';
+import {
+  Transaction,
+  TransactionType,
+  TransactionStatus,
+} from './transaction.entity';
 import { StudentsService } from '../students/students.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { CardsService } from '../cards/cards.service';
@@ -28,23 +35,29 @@ export class TransactionsService {
     const locked = await this.redis.acquireLock(lockKey, 5);
     if (!locked) {
       this.logger.warn(`Contention on idempotencyKey: ${dto.idempotencyKey}`);
-      const existing = await this.repo.findOne({ where: { idempotencyKey: dto.idempotencyKey } });
+      const existing = await this.repo.findOne({
+        where: { idempotencyKey: dto.idempotencyKey },
+      });
       if (existing) return existing;
       throw new BadRequestException('Request in progress. Try again.');
     }
 
     try {
-      const existing = await this.repo.findOne({ where: { idempotencyKey: dto.idempotencyKey } });
+      const existing = await this.repo.findOne({
+        where: { idempotencyKey: dto.idempotencyKey },
+      });
       if (existing) {
         this.logger.warn(`Duplicate transaction: ${dto.idempotencyKey}`);
         return existing;
       }
 
       const student = await this.studentsService.findByCode(dto.studentCode);
-      if (!student || !student.isActive) throw new BadRequestException('Invalid student');
+      if (!student || !student.isActive)
+        throw new BadRequestException('Invalid student');
 
       const account = await this.accountsService.findByStudentId(student.id);
-      if (account.status !== 'active') throw new BadRequestException('Account is frozen');
+      if (account.status !== 'active')
+        throw new BadRequestException('Account is frozen');
 
       await this.accountsService.debit(student.id, dto.amount);
 
@@ -65,11 +78,25 @@ export class TransactionsService {
     }
   }
 
-  async payByCard(cardUid: string, merchantId: string, amount: number, idempotencyKey: string): Promise<Transaction> {
+  async payByCard(
+    cardUid: string,
+    merchantId: string,
+    amount: number,
+    idempotencyKey: string,
+  ): Promise<Transaction> {
     const card = await this.cardsService.findByUid(cardUid);
-    if (card.status !== 'active') throw new BadRequestException('Card is not active');
+    if (card.status !== 'active')
+      throw new BadRequestException('Card is not active');
 
-    return this.pay({ studentCode: card.student.studentCode, merchantId, amount, idempotencyKey }, merchantId);
+    return this.pay(
+      {
+        studentCode: card.student.studentCode,
+        merchantId,
+        amount,
+        idempotencyKey,
+      },
+      merchantId,
+    );
   }
 
   async findByStudent(studentCode: string): Promise<Transaction[]> {
@@ -95,12 +122,18 @@ export class TransactionsService {
       .createQueryBuilder('tx')
       .select('COUNT(*)', 'totalTransactions')
       .addSelect('COALESCE(SUM(tx.amount), 0)', 'totalAmount')
-      .addSelect('COUNT(CASE WHEN tx.status = \'success\' THEN 1 END)', 'successCount')
+      .addSelect(
+        "COUNT(CASE WHEN tx.status = 'success' THEN 1 END)",
+        'successCount',
+      )
       .where('tx.createdAt >= :today', { today })
       .getRawOne();
 
     const dailyKeys = await this.redis.get('stats:daily:keys');
-    return { ...result, realtimeTxCount: dailyKeys ? parseInt(dailyKeys, 10) : 0 };
+    return {
+      ...result,
+      realtimeTxCount: dailyKeys ? parseInt(dailyKeys, 10) : 0,
+    };
   }
 
   async getStats(): Promise<{
@@ -118,14 +151,20 @@ export class TransactionsService {
     const totalStats = await this.repo
       .createQueryBuilder('tx')
       .select('COUNT(*)', 'totalTransactions')
-      .addSelect('COALESCE(SUM(CASE WHEN tx.status = \'success\' THEN tx.amount ELSE 0 END), 0)', 'totalRevenue')
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN tx.status = 'success' THEN tx.amount ELSE 0 END), 0)",
+        'totalRevenue',
+      )
       .getRawOne();
 
     // Today's transactions & revenue
     const todayStats = await this.repo
       .createQueryBuilder('tx')
       .select('COUNT(*)', 'todayTransactions')
-      .addSelect('COALESCE(SUM(CASE WHEN tx.status = \'success\' THEN tx.amount ELSE 0 END), 0)', 'todayRevenue')
+      .addSelect(
+        "COALESCE(SUM(CASE WHEN tx.status = 'success' THEN tx.amount ELSE 0 END), 0)",
+        'todayRevenue',
+      )
       .where('tx.createdAt >= :today', { today })
       .getRawOne();
 

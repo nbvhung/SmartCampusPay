@@ -1,6 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { ConflictException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  ConflictException,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { AdminsService } from './admins.service';
@@ -86,28 +90,43 @@ describe('AdminsService', () => {
       repo.create.mockReturnValue(mockAdmin);
       repo.save.mockResolvedValue(mockAdmin);
 
-      const result = await service.create('newadmin', 'password123', 'New Admin', 'admin');
+      const result = await service.create(
+        'newadmin',
+        'password123',
+        'New Admin',
+        'admin',
+      );
       expect(result).toEqual(mockAdmin);
       expect(repo.create).toHaveBeenCalledWith(
-        expect.objectContaining({ username: 'newadmin', fullName: 'New Admin', role: 'admin' }),
+        expect.objectContaining({
+          username: 'newadmin',
+          fullName: 'New Admin',
+          role: 'admin',
+        }),
       );
     });
 
     it('should throw ConflictException if username exists', async () => {
       repo.findOne.mockResolvedValue(mockAdmin);
-      await expect(service.create('admin', 'password123', 'Dup', 'admin')).rejects.toThrow(ConflictException);
+      await expect(
+        service.create('admin', 'password123', 'Dup', 'admin'),
+      ).rejects.toThrow(ConflictException);
     });
   });
 
   describe('remove', () => {
     it('should throw ForbiddenException when removing super_admin', async () => {
       repo.findOne.mockResolvedValue(mockAdmin);
-      await expect(service.remove('uuid-1')).rejects.toThrow(ForbiddenException);
+      await expect(service.remove('uuid-1')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('should throw NotFoundException if admin not found', async () => {
       repo.findOne.mockResolvedValue(null);
-      await expect(service.remove('nonexistent')).rejects.toThrow(NotFoundException);
+      await expect(service.remove('nonexistent')).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 });
