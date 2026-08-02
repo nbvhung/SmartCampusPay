@@ -108,6 +108,29 @@ describe('SePayService (webhook)', () => {
     );
   });
 
+  it('khớp mã SV có chữ cái (B23DCCN358) qua nội dung QR tĩnh', async () => {
+    const stu = {
+      id: 'stu-1',
+      studentCode: 'B23DCCN358',
+      fullName: 'Nguyen Ba Viet Hung',
+      isActive: true,
+    } as Student;
+    studentsService.findByCode = jest.fn().mockResolvedValue(stu);
+    const manager = fakeManager();
+    dataSource.transaction = jest.fn().mockImplementation(async (cb: any) => cb(manager));
+
+    const result = await service.handleWebhook({
+      id: 200,
+      transferType: 'in',
+      transferAmount: 40000,
+      content: 'Nap tien B23DCCN358',
+    });
+
+    expect(result).toEqual({ message: 'success' });
+    expect(studentsService.findByCode).toHaveBeenCalledWith('B23DCCN358');
+    expect(manager.save).toHaveBeenCalled();
+  });
+
   it('khớp theo refCode (QR động) và cộng tiền', async () => {
     const pendingTx = {
       id: 'tx-1',

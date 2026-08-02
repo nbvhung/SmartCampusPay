@@ -10,25 +10,26 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { TransactionsService } from './transactions.service';
 import { PayDto } from './dto/pay.dto';
+import { PayByCardDto } from './dto/pay-by-card.dto';
 import { ApiKeyGuard } from '../../common/guards/api-key.guard';
+import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 @Controller('transactions')
 export class TransactionsController {
   constructor(private readonly service: TransactionsService) {}
 
-  @Post('pay')
+  @Public()
   @UseGuards(ApiKeyGuard)
+  @Post('pay')
   async pay(@Body() dto: PayDto, @Req() req: any) {
     return this.service.pay(dto, req.merchant.id);
   }
 
-  @Post('pay/card')
+  @Public()
   @UseGuards(ApiKeyGuard)
-  async payByCard(
-    @Body() dto: { cardUid: string; amount: number; idempotencyKey: string },
-    @Req() req: any,
-  ) {
+  @Post('pay/card')
+  async payByCard(@Body() dto: PayByCardDto, @Req() req: any) {
     return this.service.payByCard(
       dto.cardUid,
       req.merchant.id,

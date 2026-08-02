@@ -17,5 +17,6 @@ import { TopupPendingModule } from '../topup-pending/topup-pending.module';
   ],
   controllers: [SePayController],
   providers: [SePayService],
+  exports: [SePayService],
 })
 export class SePayModule {}

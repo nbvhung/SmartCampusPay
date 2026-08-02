@@ -83,9 +83,9 @@ export class SePayService {
   getQrUrl(amount: number, content: string): string {
     const params = new URLSearchParams({
       acc: this.accountNumber,
-      amount: String(amount),
       des: content,
     });
+    if (amount > 0) params.set('amount', String(amount));
     if (this.bankId) params.set('bank', this.bankId);
     else if (this.bankName) params.set('bank', this.bankName);
     return `${this.sepayQrBase}?${params.toString()}`;
@@ -146,6 +146,41 @@ export class SePayService {
       referenceCode: refCode,
       qrUrl,
       amount,
+      expiresAt: expiresAt.toISOString(),
+    };
+  }
+
+  async createDevicePayment(studentCode: string): Promise<{
+    referenceCode: string;
+    qrUrl: string;
+    amount: number;
+    expiresAt: string;
+  }> {
+    const student = await this.studentsService.findByCode(studentCode);
+    if (!student) throw new BadRequestException('Sinh viên không tồn tại');
+    if (!student.isActive) throw new BadRequestException('Sinh viên bị khóa');
+
+    const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    const refCode = this.generateRefCode(studentCode);
+    // amount = 0 → QR không gắn số tiền cố định, SV tự nhập khi chuyển khoản
+    const qrUrl = this.getQrUrl(0, refCode);
+
+    await this.txRepo.save({
+      amount: 0,
+      type: TransactionType.CREDIT,
+      status: TransactionStatus.PENDING,
+      idempotencyKey: `sepay_${refCode}`,
+      referenceCode: refCode,
+      description: `Nạp tiền qua thiết bị - ${refCode}`,
+      studentCode: student.studentCode,
+      studentId: student.id,
+      accountId: (await this.accountsService.findByStudentId(student.id)).id,
+    });
+
+    return {
+      referenceCode: refCode,
+      qrUrl,
+      amount: 0,
       expiresAt: expiresAt.toISOString(),
     };
   }
@@ -299,7 +334,7 @@ export class SePayService {
       return { message: 'already_processed' };
     }
 
-    if (tx.amount !== dto.amount) {
+    if (tx.amount !== 0 && tx.amount !== dto.amount) {
       this.logger.warn(
         `Số tiền không khớp: expected=${tx.amount}, actual=${dto.amount}`,
       );
@@ -330,6 +365,7 @@ export class SePayService {
       });
       if (currentTx && currentTx.status !== TransactionStatus.SUCCESS) {
         currentTx.status = TransactionStatus.SUCCESS;
+        currentTx.amount = currentTx.amount === 0 ? dto.amount : currentTx.amount;
         currentTx.description = `Nạp tiền qua ngân hàng - ${dto.content}`;
         await manager.save(currentTx);
       }
@@ -394,15 +430,21 @@ export class SePayService {
   private async matchStudentByContent(
     content: string,
   ): Promise<Student | null> {
-    const digitGroups = content.match(/\d{6,}/g);
-    if (!digitGroups) return null;
+    // Lấy các token chữ-số dài >= 6 (mã SV có thể chứa chữ, ví dụ B23DCCN358)
+    const tokens = content.match(/[A-Za-z0-9]{6,}/g);
+    if (!tokens) return null;
 
     const seen = new Set<string>();
-    for (const group of digitGroups) {
-      if (seen.has(group)) continue;
-      seen.add(group);
-      const student = await this.studentsService.findByCode(group);
-      if (student && student.isActive) return student;
+    for (const token of tokens) {
+      const variants = [token, token.toUpperCase()];
+      for (const candidate of variants) {
+        const key = candidate.toUpperCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+
+        const student = await this.studentsService.findByCode(candidate);
+        if (student && student.isActive) return student;
+      }
     }
     return null;
   }

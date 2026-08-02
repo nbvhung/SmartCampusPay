@@ -12,6 +12,7 @@ import { AccountsModule } from './modules/accounts/accounts.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { MerchantsModule } from './modules/merchants/merchants.module';
 import { HardwareModule } from './modules/hardware/hardware.module';
+import { HardwareDeviceModule } from './modules/hardware-device/hardware-device.module';
 import { RedisModule } from './modules/redis/redis.module';
 import { SePayModule } from './modules/sepay/sepay.module';
 import { TopupPendingModule } from './modules/topup-pending/topup-pending.module';
@@ -33,6 +34,7 @@ import { TopupPendingModule } from './modules/topup-pending/topup-pending.module
     TransactionsModule,
     MerchantsModule,
     HardwareModule,
+    HardwareDeviceModule,
     RedisModule,
     SePayModule,
     TopupPendingModule,
