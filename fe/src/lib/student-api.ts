@@ -12,7 +12,7 @@ export const studentApi = {
     api.post<ApiResponse<Student>>('/students', data),
 
   toggleActive: (id: string) =>
-    api.patch<ApiResponse<Student>>(`/students/${id}/toggle-active`),
+    api.patch<ApiResponse<Student>>(`/students/${id}/toggle`),
 
   import: (file: FormData) =>
     api.post<ApiResponse<{ imported: number }>>('/students/import', file, {
