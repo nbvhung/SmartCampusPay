@@ -17,9 +17,6 @@ export const studentApi = {
   toggleActive: (id: string) =>
     api.patch<ApiResponse<Student>>(`/students/${id}/toggle`),
 
-  remove: (id: string) =>
-    api.delete<ApiResponse<{ message: string }>>(`/students/${id}`),
-
   import: (file: FormData) =>
     api.post<ApiResponse<{ imported: number }>>('/students/import', file, {
       headers: { 'Content-Type': 'multipart/form-data' },
