@@ -14,6 +14,10 @@ export class CardsService {
     return this.repo.save(data);
   }
 
+  async findAll(): Promise<Card[]> {
+    return this.repo.find({ relations: { student: true } });
+  }
+
   async findByUid(uid: string): Promise<Card> {
     const card = await this.repo.findOne({
       where: { uid },
@@ -36,5 +40,11 @@ export class CardsService {
 
   async updateLastUsed(uid: string): Promise<void> {
     await this.repo.update({ uid }, { lastUsedAt: new Date() });
+  }
+
+  async remove(id: string): Promise<void> {
+    const card = await this.repo.findOne({ where: { id } });
+    if (!card) throw new NotFoundException('Card not found');
+    await this.repo.remove(card);
   }
 }

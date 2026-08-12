@@ -48,7 +48,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
     if (payload.role === 'admin' || payload.role === 'super_admin') {
       const admin = await this.adminsService.findById(payload.sub);
-      if (!admin || !admin.isActive) throw new UnauthorizedException('Tài khoản không tồn tại');
+      if (!admin || !admin.isActive)
+        throw new UnauthorizedException('Tài khoản không tồn tại');
       return {
         id: admin.id,
         username: admin.username,
@@ -59,8 +60,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     }
 
     // Student
-    const student = await this.studentRepo.findOne({ where: { id: payload.sub } });
-    if (!student || !student.isActive) throw new UnauthorizedException('Tài khoản không tồn tại');
+    const student = await this.studentRepo.findOne({
+      where: { id: payload.sub },
+    });
+    if (!student || !student.isActive)
+      throw new UnauthorizedException('Tài khoản không tồn tại');
 
     return {
       id: student.id,

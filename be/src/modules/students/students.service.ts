@@ -1,10 +1,17 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  BadRequestException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import * as ExcelJS from 'exceljs';
 import { Student } from './student.entity';
 import { Account } from '../accounts/account.entity';
+import { Card } from '../cards/card.entity';
+import { CardsService } from '../cards/cards.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { BulkImportResult, ImportStudentRow } from './dto/import-student.dto';
 
@@ -14,10 +21,13 @@ export class StudentsService {
     @InjectRepository(Student)
     private readonly repo: Repository<Student>,
     private readonly dataSource: DataSource,
+    private readonly cardsService: CardsService,
   ) {}
 
   async create(dto: CreateStudentDto): Promise<Student> {
-    const exists = await this.repo.findOne({ where: { studentCode: dto.studentCode } });
+    const exists = await this.repo.findOne({
+      where: { studentCode: dto.studentCode },
+    });
     if (exists) throw new ConflictException('Mã sinh viên đã tồn tại');
 
     const queryRunner = this.dataSource.createQueryRunner();
@@ -25,7 +35,10 @@ export class StudentsService {
     await queryRunner.startTransaction();
 
     try {
-      const student = queryRunner.manager.create(Student, dto as Partial<Student>);
+      const student = queryRunner.manager.create(
+        Student,
+        dto as Partial<Student>,
+      );
 
       // Nếu có dateOfBirth thì sinh password mặc định ddmmyyyy
       if (dto.dateOfBirth) {
@@ -45,6 +58,15 @@ export class StudentsService {
         dailySpent: 0,
       });
       await queryRunner.manager.save(account);
+
+      // Tạo thẻ ảo cho sinh viên
+      const card = queryRunner.manager.create(Card, {
+        studentId: savedStudent.id,
+        uid: `MOCK-${dto.studentCode}`,
+        chipType: 'MIFARE',
+        status: 'active' as any,
+      });
+      await queryRunner.manager.save(card);
 
       await queryRunner.commitTransaction();
       return savedStudent;
@@ -82,6 +104,23 @@ export class StudentsService {
     return this.repo.save(student);
   }
 
+  async update(id: string, dto: Partial<Student>): Promise<Student> {
+    const student = await this.findById(id);
+    if (dto.studentCode && dto.studentCode !== student.studentCode) {
+      const exists = await this.repo.findOne({
+        where: { studentCode: dto.studentCode },
+      });
+      if (exists) throw new ConflictException('Mã sinh viên đã tồn tại');
+    }
+    Object.assign(student, dto);
+    return this.repo.save(student);
+  }
+
+  async remove(id: string): Promise<void> {
+    const student = await this.findById(id);
+    await this.repo.remove(student);
+  }
+
   // ─── BULK IMPORT TỪ FILE EXCEL ─────────────────────────────────────────────
 
   async bulkImport(fileBuffer: Buffer): Promise<BulkImportResult> {
@@ -112,7 +151,14 @@ export class StudentsService {
         return;
       }
 
-      rows.push({ studentCode, fullName, email, phone, faculty, dateOfBirth: String(dobRaw) });
+      rows.push({
+        studentCode,
+        fullName,
+        email,
+        phone,
+        faculty,
+        dateOfBirth: String(dobRaw),
+      });
     });
 
     // Xử lý từng row
@@ -123,7 +169,9 @@ export class StudentsService {
       await queryRunner.startTransaction();
 
       try {
-        const exists = await queryRunner.manager.findOne(Student, { where: { studentCode: row.studentCode } });
+        const exists = await queryRunner.manager.findOne(Student, {
+          where: { studentCode: row.studentCode },
+        });
         if (exists) {
           result.skipped++;
           await queryRunner.rollbackTransaction();
@@ -158,6 +206,15 @@ export class StudentsService {
         });
         await queryRunner.manager.save(account);
 
+        // Tạo thẻ ảo cho sinh viên
+        const card = queryRunner.manager.create(Card, {
+          studentId: savedStudent.id,
+          uid: `MOCK-${row.studentCode}`,
+          chipType: 'MIFARE',
+          status: 'active' as any,
+        });
+        await queryRunner.manager.save(card);
+
         await queryRunner.commitTransaction();
         result.created++;
       } catch (err: any) {
@@ -189,7 +246,9 @@ export class StudentsService {
     // dd/mm/yyyy
     const parts = raw.split('/');
     if (parts.length === 3) {
-      return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+      return new Date(
+        `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`,
+      );
     }
     // yyyy-mm-dd
     return new Date(raw);

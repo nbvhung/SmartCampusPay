@@ -3,11 +3,13 @@ import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { CreditCard, Loader2 } from 'lucide-react';
 import { authApi } from '@/lib/auth-api';
+import { useAuth } from '@/contexts/auth-context';
 
 export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const router = useRouter();
+  const { setUser, setMustChangePassword } = useAuth();
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -21,6 +23,9 @@ export default function LoginPage() {
     try {
       const res = await authApi.login(identifier, password);
       const data = res.data?.data;
+
+      setUser(data.user);
+      setMustChangePassword(data.mustChangePassword ?? false);
 
       if (data?.user?.role === 'student') {
         if (data.mustChangePassword) {

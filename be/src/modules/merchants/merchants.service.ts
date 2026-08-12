@@ -1,4 +1,8 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Merchant } from './merchant.entity';
@@ -17,7 +21,9 @@ export class MerchantsService {
     return `mcp_${crypto.randomBytes(24).toString('hex')}`;
   }
 
-  async create(dto: CreateMerchantDto): Promise<{ merchant: Merchant; rawApiKey: string }> {
+  async create(
+    dto: CreateMerchantDto,
+  ): Promise<{ merchant: Merchant; rawApiKey: string }> {
     const rawKey = this.generateApiKey();
     const hashedKey = await bcrypt.hash(rawKey, 10);
     const merchant = this.repo.create({ ...dto, apiKey: hashedKey });
@@ -46,5 +52,18 @@ export class MerchantsService {
     const merchant = await this.findById(id);
     merchant.isActive = !merchant.isActive;
     return this.repo.save(merchant);
+  }
+
+  async update(id: string, dto: Partial<CreateMerchantDto>): Promise<Merchant> {
+    const merchant = await this.findById(id);
+    if (dto.name !== undefined) merchant.name = dto.name;
+    if (dto.type !== undefined) merchant.type = dto.type;
+    if (dto.location !== undefined) merchant.location = dto.location;
+    return this.repo.save(merchant);
+  }
+
+  async remove(id: string): Promise<void> {
+    const merchant = await this.findById(id);
+    await this.repo.remove(merchant);
   }
 }

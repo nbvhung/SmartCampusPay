@@ -36,6 +36,7 @@ export interface Account {
   dailySpent: number;
   status: 'active' | 'frozen' | 'closed';
   studentId: string;
+  student?: Student;
   createdAt: string;
 }
 
@@ -49,6 +50,7 @@ export interface Card {
   status: CardStatus;
   lastUsedAt?: string;
   studentId: string;
+  student?: Student;
   createdAt: string;
   updatedAt: string;
 }

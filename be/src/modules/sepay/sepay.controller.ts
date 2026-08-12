@@ -1,4 +1,14 @@
-import { Controller, Post, Get, Param, Body, Headers, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Param,
+  Body,
+  Headers,
+  HttpCode,
+  HttpStatus,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { SePayService } from './sepay.service';
 import { Public } from '../../common/decorators/public.decorator';
@@ -11,10 +21,7 @@ export class SePayController {
   @Public()
   @Post('webhook')
   @HttpCode(HttpStatus.OK)
-  async webhook(
-    @Body() body: any,
-    @Headers('authorization') auth: string,
-  ) {
+  async webhook(@Body() body: any, @Headers('authorization') auth: string) {
     this.service.verifyApiKey(auth);
     return this.service.handleWebhook(body);
   }
@@ -30,6 +37,13 @@ export class SePayController {
       return { success: false, message: 'Chỉ sinh viên mới được nạp tiền' };
     }
     return this.service.createPayment(user.studentCode, dto.amount);
+  }
+
+  @Post('static-qr')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(HttpStatus.OK)
+  getStaticQr() {
+    return this.service.createStaticQr();
   }
 
   @Post('cancel-payment')

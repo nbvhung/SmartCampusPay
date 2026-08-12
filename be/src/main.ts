@@ -1,5 +1,6 @@
 import { NestFactory, Reflector } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
+import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const cookieParser = require('cookie-parser');
 import { AppModule } from './app.module';
@@ -37,6 +38,20 @@ async function bootstrap() {
   // Seed admin mặc định nếu chưa có
   const adminsService = app.get(AdminsService);
   await adminsService.seedDefaultAdmin();
+
+  // Swagger — tài liệu API cho bên phần cứng
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('SmartCampusPay API')
+    .setDescription('Hệ thống thanh toán nội bộ thẻ sinh viên (NFC/RFID + QR)')
+    .setVersion('1.0')
+    .addBearerAuth()
+    .addApiKey(
+      { type: 'apiKey', in: 'header', name: 'X-API-Key' },
+      'X-API-Key',
+    )
+    .build();
+  const document = SwaggerModule.createDocument(app, swaggerConfig);
+  SwaggerModule.setup('api/docs', app, document);
 
   const port = process.env.PORT || 4000;
   await app.listen(port);

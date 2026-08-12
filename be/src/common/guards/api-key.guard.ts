@@ -1,4 +1,9 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Merchant } from '../../modules/merchants/merchant.entity';
@@ -17,10 +22,13 @@ export class ApiKeyGuard implements CanActivate {
 
     if (!apiKey) throw new UnauthorizedException('Missing API key');
 
-    const merchants = await this.merchantRepo.find({ select: { id: true, apiKey: true, isActive: true } });
+    const merchants = await this.merchantRepo.find({
+      select: { id: true, apiKey: true, isActive: true },
+    });
     for (const merchant of merchants) {
       if (await bcrypt.compare(apiKey, merchant.apiKey)) {
-        if (!merchant.isActive) throw new UnauthorizedException('Merchant is inactive');
+        if (!merchant.isActive)
+          throw new UnauthorizedException('Merchant is inactive');
         request.merchant = merchant;
         return true;
       }
