@@ -129,7 +129,8 @@ export default function AdminStudentsPage() {
 
     try {
       if (modalMode === 'add') {
-        await studentApi.create(formData);
+        const { isActive, ...createPayload } = formData;
+        await studentApi.create(createPayload);
         setFormSuccess('Thêm sinh viên thành công!');
       } else if (modalMode === 'edit' && selectedStudent) {
         await studentApi.update(selectedStudent.id, {
