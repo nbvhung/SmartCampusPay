@@ -238,7 +238,11 @@ export class SePayService {
       const result = await this.tryMatchByRefCode(dto);
       if (result) return result;
 
-      const resultByStudent = await this.tryMatchByStudentCode(dto, idemKey);
+      const resultByStudent = await this.tryMatchByStudentCode(
+        dto,
+        idemKey,
+        transferId,
+      );
       if (resultByStudent) return resultByStudent;
 
       this.logger.warn(
@@ -365,7 +369,8 @@ export class SePayService {
       });
       if (currentTx && currentTx.status !== TransactionStatus.SUCCESS) {
         currentTx.status = TransactionStatus.SUCCESS;
-        currentTx.amount = currentTx.amount === 0 ? dto.amount : currentTx.amount;
+        currentTx.amount =
+          currentTx.amount === 0 ? dto.amount : currentTx.amount;
         currentTx.description = `Nạp tiền qua ngân hàng - ${dto.content}`;
         await manager.save(currentTx);
       }
@@ -380,13 +385,25 @@ export class SePayService {
   private async tryMatchByStudentCode(
     dto: SePayWebhookDto,
     idemKey: string,
+    transferId: string,
   ): Promise<{ message: string } | null> {
     const student = await this.matchStudentByContent(dto.content);
     if (!student) return null;
 
     if (dto.amount < 1000 || dto.amount > 5000000) {
-      this.logger.warn(`Số tiền ngoài phạm vi cho phép: ${dto.amount}`);
-      return { message: 'amount_out_of_range' };
+      this.logger.warn(
+        `Số tiền ngoài phạm vi cho phép: ${dto.amount}, chuyển sang hàng đợi chờ khớp`,
+      );
+      await this.topupPendingService.createFromWebhook({
+        transferId,
+        amount: dto.amount,
+        content: dto.content,
+        sender: dto.sender,
+        bankRef: dto.bankRef,
+        bankName: dto.bankName,
+        note: 'amount_out_of_range',
+      });
+      return { message: 'pending_match' };
     }
 
     await this.dataSource.transaction(async (manager) => {

@@ -1,11 +1,12 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Wallet, History, QrCode, CheckCircle, Clock, Loader2 } from 'lucide-react';
+import { Wallet, History, QrCode, CheckCircle, Clock, Loader2, Copy, User } from 'lucide-react';
 import { StudentLayout } from '@/components/layout/student-layout';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { PageLoading } from '@/components/ui/loading-spinner';
 import { transactionApi } from '@/lib/transaction-api';
-import { sepayApi, type SePayPayment } from '@/lib/sepay-api';
+import { sepayApi, type SePayPayment, type SePayStaticQr } from '@/lib/sepay-api';
+import { authApi } from '@/lib/auth-api';
 import { useAuth } from '@/contexts/auth-context';
 import type { Transaction, Student } from '@/types';
 
@@ -17,6 +18,10 @@ export default function StudentTopupPage() {
   const [amount, setAmount] = useState('');
   const [error, setError] = useState('');
   const [txs, setTxs] = useState<Transaction[]>([]);
+
+  const [mode, setMode] = useState<'dynamic' | 'static'>('dynamic');
+  const [staticQr, setStaticQr] = useState<SePayStaticQr | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const [payment, setPayment] = useState<SePayPayment | null>(null);
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'creating' | 'pending' | 'success' | 'expired'>('idle');
@@ -38,6 +43,58 @@ export default function StudentTopupPage() {
   useEffect(() => {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
+
+  const startStaticPoll = useCallback(() => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    const poll = async () => {
+      try {
+        const meRes = await authApi.me();
+        const acc = meRes.data.data?.accounts?.[0];
+        if (acc && typeof acc.balance === 'number') setBalance(acc.balance);
+      } catch { }
+    };
+    poll();
+    pollRef.current = setInterval(poll, 5000);
+  }, []);
+
+  const fetchStaticQr = useCallback(async () => {
+    if (staticQr) return;
+    try {
+      const res = await sepayApi.staticQr();
+      setStaticQr(res.data.data);
+    } catch {
+      setError('Không tải được QR nạp tiền. Thử lại sau.');
+    }
+  }, [staticQr]);
+
+  async function switchMode(m: 'dynamic' | 'static') {
+    if (m === mode) return;
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = undefined;
+    if (m === 'static') {
+      if (payment?.referenceCode) {
+        try { await sepayApi.cancelPayment(payment.referenceCode); } catch { }
+      }
+      setPayment(null);
+      setPaymentStatus('idle');
+      setError('');
+      setMode('static');
+      fetchStaticQr();
+      startStaticPoll();
+    } else {
+      setMode('dynamic');
+      setError('');
+      setCopied(false);
+    }
+  }
+
+  function copyAccountNumber() {
+    if (!staticQr) return;
+    navigator.clipboard?.writeText(staticQr.accountNumber).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => { });
+  }
 
   async function handleCreateQr() {
     const num = Number(amount);
@@ -69,7 +126,7 @@ export default function StudentTopupPage() {
               setAmount('');
             }, 2000);
           }
-        } catch {}
+        } catch { }
         setPollCount(c => c + 1);
       }, 5000);
     } catch (err: any) {
@@ -81,7 +138,7 @@ export default function StudentTopupPage() {
   async function handleCancel() {
     if (pollRef.current) clearInterval(pollRef.current);
     if (payment?.referenceCode) {
-      try { await sepayApi.cancelPayment(payment.referenceCode); } catch {}
+      try { await sepayApi.cancelPayment(payment.referenceCode); } catch { }
     }
     setPayment(null);
     setPaymentStatus('idle');
@@ -93,11 +150,13 @@ export default function StudentTopupPage() {
   const columns: Column<Transaction>[] = [
     { key: 'createdAt', header: 'Thời gian', render: (t) => new Date(t.createdAt).toLocaleString('vi-VN') },
     { key: 'amount', header: 'Số tiền', render: (t) => <span className="text-green-600">+{t.amount.toLocaleString()}đ</span> },
-    { key: 'status', header: 'Trạng thái', render: (t) => {
-      const map: Record<string, string> = { success: 'Thành công', pending: 'Chờ thanh toán', failed: 'Đã hủy' };
-      const cls = t.status === 'success' ? 'text-green-600' : t.status === 'pending' ? 'text-yellow-600' : 'text-red-600';
-      return <span className={cls}>{map[t.status] || t.status}</span>;
-    }},
+    {
+      key: 'status', header: 'Trạng thái', render: (t) => {
+        const map: Record<string, string> = { success: 'Thành công', pending: 'Chờ thanh toán', failed: 'Đã hủy' };
+        const cls = t.status === 'success' ? 'text-green-600' : t.status === 'pending' ? 'text-yellow-600' : 'text-red-600';
+        return <span className={cls}>{map[t.status] || t.status}</span>;
+      }
+    },
     { key: 'description', header: 'Mô tả' },
   ];
 
@@ -112,101 +171,164 @@ export default function StudentTopupPage() {
           </p>
         </div>
 
-        <div className="max-w-sm mx-auto space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Chọn số tiền</label>
-            <div className="grid grid-cols-3 gap-2 mb-3">
-              {[50000, 100000, 200000, 500000, 1000000, 2000000].map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  onClick={() => { setAmount(String(v)); setPaymentStatus('idle'); }}
-                  className={`py-2 px-3 rounded-lg border text-sm font-medium transition-colors ${
-                    Number(amount) === v
-                      ? 'bg-red-50 border-red-500 text-red-700'
-                      : 'border-gray-300 text-gray-700 hover:border-gray-400'
+        <div className="max-w-sm mx-auto">
+          <div className="flex rounded-xl border border-gray-200 overflow-hidden mb-6">
+            {(['dynamic', 'static'] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                onClick={() => switchMode(m)}
+                className={`flex-1 py-2.5 text-sm font-semibold transition-colors ${mode === m ? 'bg-red-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
                   }`}
-                >
-                  {v.toLocaleString()}đ
-                </button>
-              ))}
-            </div>
-            <input
-              type="number"
-              value={amount}
-              onChange={(e) => { setAmount(e.target.value); setPaymentStatus('idle'); }}
-              placeholder="Nhập số tiền..."
-              min={1000}
-              max={5000000}
-              className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
-            />
+              >
+                {m === 'dynamic' ? 'QR theo số tiền' : 'QR cố định'}
+              </button>
+            ))}
           </div>
 
-          {error && (
-            <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-700 text-sm">{error}</div>
-          )}
+          {mode === 'static' ? (
+            <div className="space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+                <div className="flex items-center gap-2 text-red-700">
+                  <User className="w-4 h-4" />
+                  <p className="text-sm font-semibold">
+                    Mã SV của bạn: <span className="font-mono">{studentCode}</span>
+                  </p>
+                </div>
+                <p className="text-xs text-red-600 mt-2 leading-relaxed">
+                  Khi chuyển khoản, bắt buộc ghi đúng mã sinh viên vào nội dung giao dịch (viết hoa hay thường đều được, ví dụ: {studentCode}) để hệ thống cộng tiền tự động.
+                </p>
+              </div>
 
-          {paymentStatus === 'idle' && (
-            <button
-              onClick={handleCreateQr}
-              className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
-            >
-              <QrCode className="w-5 h-5" />
-              Tạo mã QR nạp tiền
-            </button>
-          )}
+              {staticQr ? (
+                <div className="bg-gray-50 rounded-xl p-6 text-center space-y-4">
+                  <div className="bg-white inline-block p-3 rounded-xl shadow-sm">
+                    <img src={staticQr.qrUrl} alt="QR nạp tiền cố định" className="w-48 h-48" />
+                  </div>
 
-          {paymentStatus === 'creating' && (
-            <div className="flex items-center justify-center py-4">
-              <Loader2 className="animate-spin w-6 h-6 text-red-500" />
+                  <div className="text-sm text-gray-600 space-y-1">
+                    <p>Ngân hàng: <strong className="text-gray-900">{staticQr.bankName}</strong></p>
+                    <p className="flex items-center justify-center gap-2">
+                      Số tài khoản: <strong className="text-gray-900 font-mono">{staticQr.accountNumber}</strong>
+                      <button
+                        type="button"
+                        onClick={copyAccountNumber}
+                        className="inline-flex items-center gap-1 text-red-600 hover:text-red-700 text-xs font-medium"
+                        title="Sao chép số tài khoản"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        {copied ? 'Đã chép' : 'Copy'}
+                      </button>
+                    </p>
+                    <p className="text-xs text-gray-400">{staticQr.description}</p>
+                  </div>
+
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 text-xs text-yellow-700">
+                    Quét QR, nhập số tiền muốn nạp và ghi đúng mã SV vào nội dung rồi chuyển khoản
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center py-10">
+                  <Loader2 className="animate-spin w-6 h-6 text-red-500" />
+                </div>
+              )}
             </div>
-          )}
-
-          {payment && paymentStatus !== 'idle' && paymentStatus !== 'creating' && (
-            <div className="bg-gray-50 rounded-xl p-6 text-center space-y-4">
-              <div className="flex items-center justify-center gap-2">
-                {paymentStatus === 'success' ? (
-                  <CheckCircle className="w-6 h-6 text-green-500" />
-                ) : (
-                  <Clock className="w-6 h-6 text-yellow-500" />
-                )}
-                <span className={`font-semibold ${paymentStatus === 'success' ? 'text-green-600' : 'text-yellow-600'}`}>
-                  {paymentStatus === 'success' ? 'Nạp tiền thành công!' : 'Đang chờ thanh toán...'}
-                </span>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Chọn số tiền</label>
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  {[50000, 100000, 200000, 500000, 1000000, 2000000].map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => { setAmount(String(v)); setPaymentStatus('idle'); }}
+                      className={`py-2 px-3 rounded-lg border text-sm font-medium transition-colors ${Number(amount) === v
+                          ? 'bg-red-50 border-red-500 text-red-700'
+                          : 'border-gray-300 text-gray-700 hover:border-gray-400'
+                        }`}
+                    >
+                      {v.toLocaleString()}đ
+                    </button>
+                  ))}
+                </div>
+                <input
+                  type="number"
+                  value={amount}
+                  onChange={(e) => { setAmount(e.target.value); setPaymentStatus('idle'); }}
+                  placeholder="Nhập số tiền..."
+                  min={1000}
+                  max={5000000}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+                />
               </div>
 
-              <div className="bg-white inline-block p-3 rounded-xl shadow-sm">
-                <img src={payment.qrUrl} alt="QR thanh toán" className="w-48 h-48" />
-              </div>
+              {error && (
+                <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-700 text-sm">{error}</div>
+              )}
 
-              <div className="text-sm text-gray-600 space-y-1">
-                <p>Số tiền: <strong className="text-gray-900">{payment.amount.toLocaleString()}đ</strong></p>
-                <p>Nội dung CK: <code className="bg-gray-200 px-2 py-0.5 rounded text-red-700 font-mono text-xs">{payment.referenceCode}</code></p>
-                <p className="text-xs text-gray-400">Mở app ngân hàng quét mã QR để thanh toán</p>
-              </div>
+              {paymentStatus === 'idle' && (
+                <button
+                  onClick={handleCreateQr}
+                  className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+                >
+                  <QrCode className="w-5 h-5" />
+                  Tạo mã QR nạp tiền
+                </button>
+              )}
 
-              {paymentStatus === 'pending' && (
-                <div className="flex items-center justify-center gap-4">
-                  <button
-                    onClick={handleCancel}
-                    className="text-sm text-gray-500 hover:text-red-500 underline underline-offset-2"
-                  >
-                    Hủy
-                  </button>
+              {paymentStatus === 'creating' && (
+                <div className="flex items-center justify-center py-4">
+                  <Loader2 className="animate-spin w-6 h-6 text-red-500" />
                 </div>
               )}
 
-              {paymentStatus === 'success' && (
-                <button
-                  onClick={handleCancel}
-                  className="text-sm text-gray-500 hover:text-red-500 underline underline-offset-2"
-                >
-                  Nạp thêm
-                </button>
+              {payment && paymentStatus !== 'idle' && paymentStatus !== 'creating' && (
+                <div className="bg-gray-50 rounded-xl p-6 text-center space-y-4">
+                  <div className="flex items-center justify-center gap-2">
+                    {paymentStatus === 'success' ? (
+                      <CheckCircle className="w-6 h-6 text-green-500" />
+                    ) : (
+                      <Clock className="w-6 h-6 text-yellow-500" />
+                    )}
+                    <span className={`font-semibold ${paymentStatus === 'success' ? 'text-green-600' : 'text-yellow-600'}`}>
+                      {paymentStatus === 'success' ? 'Nạp tiền thành công!' : 'Đang chờ thanh toán...'}
+                    </span>
+                  </div>
+
+                  <div className="bg-white inline-block p-3 rounded-xl shadow-sm">
+                    <img src={payment.qrUrl} alt="QR thanh toán" className="w-48 h-48" />
+                  </div>
+
+                  <div className="text-sm text-gray-600 space-y-1">
+                    <p>Số tiền: <strong className="text-gray-900">{payment.amount.toLocaleString()}đ</strong></p>
+                    <p>Nội dung CK: <code className="bg-gray-200 px-2 py-0.5 rounded text-red-700 font-mono text-xs">{payment.referenceCode}</code></p>
+                    <p className="text-xs text-gray-400">Mở app ngân hàng quét mã QR để thanh toán</p>
+                  </div>
+
+                  {paymentStatus === 'pending' && (
+                    <div className="flex items-center justify-center gap-4">
+                      <button
+                        onClick={handleCancel}
+                        className="text-sm text-gray-500 hover:text-red-500 underline underline-offset-2"
+                      >
+                        Hủy
+                      </button>
+                    </div>
+                  )}
+
+                  {paymentStatus === 'success' && (
+                    <button
+                      onClick={handleCancel}
+                      className="text-sm text-gray-500 hover:text-red-500 underline underline-offset-2"
+                    >
+                      Nạp thêm
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           )}
-
         </div>
       </div>
 

@@ -32,6 +32,7 @@ export class TopupPendingService {
     sender?: string;
     bankRef?: string;
     bankName?: string;
+    note?: string;
   }): Promise<TopupPending> {
     const existing = await this.repo.findOne({
       where: { transferId: input.transferId },

@@ -4,7 +4,10 @@ import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { SePayService } from './sepay.service';
-import { Transaction, TransactionStatus } from '../transactions/transaction.entity';
+import {
+  Transaction,
+  TransactionStatus,
+} from '../transactions/transaction.entity';
 import { Account, AccountStatus } from '../accounts/account.entity';
 import { Student } from '../students/student.entity';
 import { AccountsService } from '../accounts/accounts.service';
@@ -41,7 +44,9 @@ describe('SePayService (webhook)', () => {
   beforeEach(async () => {
     txRepo = { findOne: jest.fn().mockResolvedValue(null) };
     studentsService = { findByCode: jest.fn() };
-    topupPendingService = { createFromWebhook: jest.fn().mockResolvedValue({}) };
+    topupPendingService = {
+      createFromWebhook: jest.fn().mockResolvedValue({}),
+    };
     redis = {
       acquireLock: jest.fn().mockResolvedValue(true),
       releaseLock: jest.fn().mockResolvedValue(undefined),
@@ -51,7 +56,10 @@ describe('SePayService (webhook)', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SePayService,
-        { provide: ConfigService, useValue: { get: jest.fn().mockReturnValue(undefined) } },
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn().mockReturnValue(undefined) },
+        },
         { provide: DataSource, useValue: dataSource },
         { provide: getRepositoryToken(Transaction), useValue: txRepo },
         { provide: AccountsService, useValue: { findByStudentId: jest.fn() } },
@@ -77,7 +85,9 @@ describe('SePayService (webhook)', () => {
   it('khớp theo mã sinh viên thì cộng tiền vào ví', async () => {
     studentsService.findByCode = jest.fn().mockResolvedValue(activeStudent);
     const manager = fakeManager();
-    dataSource.transaction = jest.fn().mockImplementation(async (cb: any) => cb(manager));
+    dataSource.transaction = jest
+      .fn()
+      .mockImplementation(async (cb: any) => cb(manager));
 
     const result = await service.handleWebhook({
       id: 100,
@@ -104,7 +114,11 @@ describe('SePayService (webhook)', () => {
 
     expect(result).toEqual({ message: 'pending_match' });
     expect(topupPendingService.createFromWebhook).toHaveBeenCalledWith(
-      expect.objectContaining({ transferId: '101', amount: 30000, content: 'Chuyen tien khong ghi ma' }),
+      expect.objectContaining({
+        transferId: '101',
+        amount: 30000,
+        content: 'Chuyen tien khong ghi ma',
+      }),
     );
   });
 
@@ -117,7 +131,9 @@ describe('SePayService (webhook)', () => {
     } as Student;
     studentsService.findByCode = jest.fn().mockResolvedValue(stu);
     const manager = fakeManager();
-    dataSource.transaction = jest.fn().mockImplementation(async (cb: any) => cb(manager));
+    dataSource.transaction = jest
+      .fn()
+      .mockImplementation(async (cb: any) => cb(manager));
 
     const result = await service.handleWebhook({
       id: 200,
@@ -131,6 +147,29 @@ describe('SePayService (webhook)', () => {
     expect(manager.save).toHaveBeenCalled();
   });
 
+  it('khớp mã SV nhưng số tiền ngoài phạm vi thì đưa vào hàng đợi với note amount_out_of_range', async () => {
+    studentsService.findByCode = jest.fn().mockResolvedValue(activeStudent);
+
+    const result = await service.handleWebhook({
+      id: 300,
+      transferType: 'in',
+      transferAmount: 6000000,
+      content: 'Nap tien 20210012',
+      sender: 'NGUYEN VAN A',
+    });
+
+    expect(result).toEqual({ message: 'pending_match' });
+    expect(topupPendingService.createFromWebhook).toHaveBeenCalledWith(
+      expect.objectContaining({
+        transferId: '300',
+        amount: 6000000,
+        content: 'Nap tien 20210012',
+        note: 'amount_out_of_range',
+      }),
+    );
+    expect(dataSource.transaction).not.toHaveBeenCalled();
+  });
+
   it('khớp theo refCode (QR động) và cộng tiền', async () => {
     const pendingTx = {
       id: 'tx-1',
@@ -139,10 +178,15 @@ describe('SePayService (webhook)', () => {
       amount: 50000,
       status: TransactionStatus.PENDING,
     } as Transaction;
-    txRepo.findOne = jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(pendingTx);
+    txRepo.findOne = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(pendingTx);
 
     const manager = fakeManager();
-    dataSource.transaction = jest.fn().mockImplementation(async (cb: any) => cb(manager));
+    dataSource.transaction = jest
+      .fn()
+      .mockImplementation(async (cb: any) => cb(manager));
 
     const result = await service.handleWebhook({
       id: 102,
