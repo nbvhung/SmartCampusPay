@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { Search, FileSpreadsheet, Plus, X, Loader2, Eye, Pencil, Trash2 } from 'lucide-react';
 import { AdminLayout } from '@/components/layout/admin-layout';
 import { DataTable, type Column } from '@/components/ui/data-table';
@@ -15,7 +15,9 @@ export default function AdminStudentsPage() {
   const [loading, setLoading] = useState(true);
   const [students, setStudents] = useState<Student[]>([]);
   const [search, setSearch] = useState('');
+  const searchInput = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [resultCount, setResultCount] = useState(0);
 
   // Modal state
   const [modalMode, setModalMode] = useState<ModalMode | null>(null);
@@ -39,12 +41,24 @@ export default function AdminStudentsPage() {
   const [detailTransactions, setDetailTransactions] = useState<Transaction[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const fetch = () => {
+  const fetch = useCallback(() => {
     setLoading(true);
-    studentApi.list({ search: search || undefined }).then((r) => setStudents(r.data.data)).catch(() => {}).finally(() => setLoading(false));
-  };
+    studentApi.list({ search: search.trim() || undefined }).then((r) => {
+      setStudents(r.data.data);
+      setResultCount(r.data.data.length);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, [search]);
 
-  useEffect(() => { fetch(); }, []);
+  // Debounce: tìm kiếm tự động sau 400ms khi gõ (chạy cả lần đầu mount)
+  useEffect(() => {
+    const timer = setTimeout(fetch, 400);
+    return () => clearTimeout(timer);
+  }, [search, fetch]);
+
+  function clearSearch() {
+    setSearch('');
+    searchInput.current?.focus();
+  }
 
   function resetForm() {
     setFormData({ studentCode: '', fullName: '', email: '', faculty: '', phone: '', dateOfBirth: '', isActive: true });
@@ -201,12 +215,22 @@ export default function AdminStudentsPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
+            ref={searchInput}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && fetch()}
-            placeholder="Tìm kiếm MSSV, họ tên..."
-            className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+            placeholder="Tìm kiếm MSSV, họ tên, email, SĐT, khoa..."
+            className="w-full pl-9 pr-9 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
           />
+          {search && (
+            <button
+              type="button"
+              onClick={clearSearch}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              title="Xoá tìm kiếm"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
         <div className="flex gap-2">
           <button
@@ -226,6 +250,9 @@ export default function AdminStudentsPage() {
 
       {/* Data table */}
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm">
+        <div className="px-4 py-3 border-b border-gray-100 text-sm text-gray-500">
+          {loading ? 'Đang tải...' : `Tìm thấy ${resultCount} sinh viên${search ? ` cho "${search}"` : ''}`}
+        </div>
         <DataTable columns={columns} data={students} loading={loading} emptyMessage="Không có sinh viên nào" />
       </div>
 

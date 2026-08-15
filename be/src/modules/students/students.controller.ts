@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Delete,
+  Query,
   UseGuards,
   UseInterceptors,
   UploadedFile,
@@ -37,8 +38,12 @@ export class StudentsController {
   }
 
   @Get()
-  findAll() {
-    return this.service.findAll();
+  findAll(
+    @Query('search') search?: string,
+    @Query('faculty') faculty?: string,
+    @Query('isActive') isActive?: string,
+  ) {
+    return this.service.findAll({ search, faculty, isActive });
   }
 
   @Get(':id')
