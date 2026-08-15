@@ -15,6 +15,12 @@ import { CardsService } from '../cards/cards.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { BulkImportResult, ImportStudentRow } from './dto/import-student.dto';
 
+interface StudentQuery {
+  search?: string;
+  faculty?: string;
+  isActive?: string;
+}
+
 @Injectable()
 export class StudentsService {
   constructor(
@@ -78,8 +84,36 @@ export class StudentsService {
     }
   }
 
-  async findAll(): Promise<Student[]> {
-    return this.repo.find({ relations: { cards: true, accounts: true } });
+  async findAll(query: StudentQuery = {}): Promise<Student[]> {
+    const { search, faculty, isActive } = query;
+
+    const qb = this.repo
+      .createQueryBuilder('student')
+      .leftJoinAndSelect('student.cards', 'cards')
+      .leftJoinAndSelect('student.accounts', 'accounts');
+
+    if (search && search.trim()) {
+      const term = `%${search.trim()}%`;
+      qb.andWhere(
+        '(student.studentCode ILIKE :term OR student.fullName ILIKE :term OR student.email ILIKE :term OR student.phone ILIKE :term OR student.faculty ILIKE :term)',
+        { term },
+      );
+    }
+
+    if (faculty) {
+      qb.andWhere('student.faculty ILIKE :faculty', {
+        faculty: `%${faculty}%`,
+      });
+    }
+
+    if (isActive === 'true' || isActive === 'false') {
+      qb.andWhere('student.isActive = :isActive', {
+        isActive: isActive === 'true',
+      });
+    }
+
+    qb.orderBy('student.createdAt', 'DESC');
+    return qb.getMany();
   }
 
   async findById(id: string): Promise<Student> {
