@@ -236,6 +236,7 @@ export class SePayService {
       }
 
       const result = await this.tryMatchByRefCode(dto);
+      this.logger.debug(`tryMatchByRefCode result: ${JSON.stringify(result)}`);
       if (result) return result;
 
       const resultByStudent = await this.tryMatchByStudentCode(
@@ -243,12 +244,18 @@ export class SePayService {
         idemKey,
         transferId,
       );
+      this.logger.debug(
+        `tryMatchByStudentCode result: ${JSON.stringify(resultByStudent)}`,
+      );
       if (resultByStudent) return resultByStudent;
 
       this.logger.warn(
         `Không khớp refCode/mã SV, đưa vào hàng đợi: "${dto.content}"`,
       );
-      await this.topupPendingService.createFromWebhook({
+      this.logger.log(
+        `[DEBUG] Tạo pending với transferId=${transferId}, amount=${dto.amount}`,
+      );
+      const createdPending = await this.topupPendingService.createFromWebhook({
         transferId,
         amount: dto.amount,
         content: dto.content,
@@ -256,7 +263,16 @@ export class SePayService {
         bankRef: dto.bankRef,
         bankName: dto.bankName,
       });
+      this.logger.log(
+        `[DEBUG] Pending tạo thành công: id=${createdPending.id}, status=${createdPending.status}`,
+      );
       return { message: 'pending_match' };
+    } catch (error) {
+      this.logger.error(
+        `[handleWebhook] Exception: ${error instanceof Error ? error.message : String(error)}`,
+        error instanceof Error ? error.stack : '',
+      );
+      throw error;
     } finally {
       await this.redis.releaseLock(lockKey);
     }
@@ -323,14 +339,15 @@ export class SePayService {
     dto: SePayWebhookDto,
   ): Promise<{ message: string } | null> {
     const refCode = this.parseRefCode(dto.content);
+    this.logger.debug(`[tryMatchByRefCode] Parsed refCode: ${refCode}`);
     if (!refCode) return null;
 
     const tx = await this.txRepo.findOne({ where: { referenceCode: refCode } });
     if (!tx) {
-      this.logger.warn(
-        `Không tìm thấy giao dịch với referenceCode: ${refCode}`,
+      this.logger.debug(
+        `[tryMatchByRefCode] Không tìm thấy giao dịch với referenceCode: ${refCode}, tiếp tục kiểm tra mã SV`,
       );
-      return { message: 'transaction_not_found' };
+      return null;
     }
 
     if (tx.status === TransactionStatus.SUCCESS) {
@@ -388,6 +405,9 @@ export class SePayService {
     transferId: string,
   ): Promise<{ message: string } | null> {
     const student = await this.matchStudentByContent(dto.content);
+    this.logger.debug(
+      `[tryMatchByStudentCode] Matched student: ${student ? student.studentCode : 'null'}`,
+    );
     if (!student) return null;
 
     if (dto.amount < 1000 || dto.amount > 5000000) {
@@ -449,6 +469,9 @@ export class SePayService {
   ): Promise<Student | null> {
     // Lấy các token chữ-số dài >= 6 (mã SV có thể chứa chữ, ví dụ B23DCCN358)
     const tokens = content.match(/[A-Za-z0-9]{6,}/g);
+    this.logger.debug(
+      `[matchStudentByContent] Extracted tokens: ${JSON.stringify(tokens)}`,
+    );
     if (!tokens) return null;
 
     const seen = new Set<string>();
@@ -459,10 +482,17 @@ export class SePayService {
         if (seen.has(key)) continue;
         seen.add(key);
 
+        this.logger.debug(
+          `[matchStudentByContent] Checking student code: ${candidate}`,
+        );
         const student = await this.studentsService.findByCode(candidate);
+        this.logger.debug(
+          `[matchStudentByContent] findByCode('${candidate}'): ${student ? student.studentCode : 'not found'}, isActive=${student?.isActive}`,
+        );
         if (student && student.isActive) return student;
       }
     }
+    this.logger.debug(`[matchStudentByContent] No student found`);
     return null;
   }
 
