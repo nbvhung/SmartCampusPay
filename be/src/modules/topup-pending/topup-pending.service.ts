@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, Raw } from 'typeorm';
 import { TopupPending, TopupPendingStatus } from './topup-pending.entity';
 import {
   Transaction,
@@ -66,7 +66,12 @@ export class TopupPendingService {
       }
 
       const student = await manager.findOne(Student, {
-        where: { studentCode },
+        where: {
+          studentCode: Raw(
+            (alias) => `${alias} ILIKE :code`,
+            { code: studentCode.trim() },
+          ),
+        },
       });
       if (!student || !student.isActive) {
         throw new BadRequestException('Sinh viên không tồn tại hoặc bị khóa');

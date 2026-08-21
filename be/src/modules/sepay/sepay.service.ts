@@ -111,6 +111,27 @@ export class SePayService {
     };
   }
 
+  createPersonalStaticQr(studentCode: string): {
+    qrUrl: string;
+    bankName: string;
+    accountNumber: string;
+    description: string;
+  } {
+    const personalDescription = `Nap tien ${studentCode}`;
+    const params = new URLSearchParams({
+      acc: this.accountNumber,
+      des: personalDescription,
+    });
+    if (this.bankId) params.set('bank', this.bankId);
+    else if (this.bankName) params.set('bank', this.bankName);
+    return {
+      qrUrl: `${this.sepayQrBase}?${params.toString()}`,
+      bankName: this.bankName,
+      accountNumber: this.accountNumber,
+      description: personalDescription,
+    };
+  }
+
   async createPayment(
     studentCode: string,
     amount: number,
@@ -476,11 +497,10 @@ export class SePayService {
 
     const seen = new Set<string>();
     for (const token of tokens) {
-      const variants = [token, token.toUpperCase()];
+      const variants = [token.toUpperCase(), token];
       for (const candidate of variants) {
-        const key = candidate.toUpperCase();
-        if (seen.has(key)) continue;
-        seen.add(key);
+        if (seen.has(candidate)) continue;
+        seen.add(candidate);
 
         this.logger.debug(
           `[matchStudentByContent] Checking student code: ${candidate}`,

@@ -46,6 +46,16 @@ export class SePayController {
     return this.service.createStaticQr();
   }
 
+  @Post('personal-static-qr')
+  @UseGuards(AuthGuard('jwt'))
+  @HttpCode(HttpStatus.OK)
+  getPersonalStaticQr(@CurrentUser() user: any) {
+    if (user.role !== 'student') {
+      return { success: false, message: 'Chỉ sinh viên được lấy QR cá nhân' };
+    }
+    return this.service.createPersonalStaticQr(user.studentCode);
+  }
+
   @Post('cancel-payment')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)

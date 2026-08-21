@@ -147,6 +147,36 @@ describe('SePayService (webhook)', () => {
     expect(manager.save).toHaveBeenCalled();
   });
 
+  it('khớp mã SV viết thường (B23dccn358) trong nội dung QR tĩnh thực tế', async () => {
+    const stu = {
+      id: 'stu-1',
+      studentCode: 'B23DCCN358',
+      fullName: 'Nguyen Ba Viet Hung',
+      isActive: true,
+    } as Student;
+    studentsService.findByCode = jest
+      .fn()
+      .mockImplementation(async (code: string) =>
+        code === 'B23DCCN358' ? stu : null,
+      );
+    const manager = fakeManager();
+    dataSource.transaction = jest
+      .fn()
+      .mockImplementation(async (cb: any) => cb(manager));
+
+    const result = await service.handleWebhook({
+      id: 201,
+      transferType: 'in',
+      transferAmount: 40000,
+      content: 'QAKHGV3200 SEPAY18763 1 B23dccn358',
+    });
+
+    expect(result).toEqual({ message: 'success' });
+    expect(studentsService.findByCode).toHaveBeenCalledWith('B23DCCN358');
+    expect(topupPendingService.createFromWebhook).not.toHaveBeenCalled();
+    expect(manager.save).toHaveBeenCalled();
+  });
+
   it('khớp mã SV nhưng số tiền ngoài phạm vi thì đưa vào hàng đợi với note amount_out_of_range', async () => {
     studentsService.findByCode = jest.fn().mockResolvedValue(activeStudent);
 
