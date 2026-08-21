@@ -28,6 +28,13 @@ export class HardwareDeviceController {
 
   @Public()
   @UseGuards(ApiKeyGuard)
+  @Get('balance/:uid')
+  getBalanceByUid(@Param('uid') uid: string) {
+    return this.service.getBalanceByUid(uid);
+  }
+
+  @Public()
+  @UseGuards(ApiKeyGuard)
   @Post('topup/qr')
   @HttpCode(HttpStatus.OK)
   createTopupQr(@Body() dto: TopupQrDto) {

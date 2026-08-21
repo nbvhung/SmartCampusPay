@@ -40,6 +40,30 @@ export class HardwareDeviceService {
     return { studentCode: student.studentCode, fullName: student.fullName };
   }
 
+  async getBalanceByUid(uid: string): Promise<{
+    studentCode: string;
+    fullName: string;
+    balance: number;
+  }> {
+    const card = await this.cardsService.findByUid(uid);
+    if (card.status !== CardStatus.ACTIVE) {
+      throw new BadRequestException('Thẻ không hoạt động');
+    }
+    const student = card.student;
+    if (!student) throw new NotFoundException('Thẻ chưa liên kết sinh viên');
+    if (!student.isActive) throw new BadRequestException('Sinh viên bị khóa');
+
+    const account = student.accounts?.[0];
+    if (!account)
+      throw new NotFoundException('Không tìm thấy ví của sinh viên');
+
+    return {
+      studentCode: student.studentCode,
+      fullName: student.fullName,
+      balance: Number(account.balance),
+    };
+  }
+
   async createTopupQr(body: TopupQrDto): Promise<{
     referenceCode: string;
     qrUrl: string;
