@@ -1,16 +1,17 @@
 import {
   Injectable,
-  NotFoundException,
   BadRequestException,
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import {
   Transaction,
   TransactionType,
   TransactionStatus,
 } from './transaction.entity';
+import { Student } from '../students/student.entity';
+import { Merchant } from '../merchants/merchant.entity';
 import { StudentsService } from '../students/students.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { CardsService } from '../cards/cards.service';
@@ -28,6 +29,7 @@ export class TransactionsService {
     private readonly accountsService: AccountsService,
     private readonly cardsService: CardsService,
     private readonly redis: RedisService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async pay(dto: PayDto, merchantId: string): Promise<Transaction> {
@@ -168,10 +170,9 @@ export class TransactionsService {
       .where('tx.createdAt >= :today', { today })
       .getRawOne();
 
-    // Count students & merchants (từ các service tương ứng)
-    // TODO: Gọi từ repository khác hoặc query trực tiếp
-    const studentCount = await this.repo.manager.count('students');
-    const merchantCount = await this.repo.manager.count('merchants');
+    // Count students & merchants via DataSource (entity class, không dùng string)
+    const studentCount = await this.dataSource.getRepository(Student).count();
+    const merchantCount = await this.dataSource.getRepository(Merchant).count();
 
     return {
       totalTransactions: parseInt(totalStats.totalTransactions, 10) || 0,
@@ -181,5 +182,46 @@ export class TransactionsService {
       totalStudents: studentCount,
       totalMerchants: merchantCount,
     };
+  }
+
+  /**
+   * Trả dữ liệu doanh thu + số giao dịch theo từng ngày trong N ngày gần nhất.
+   * Dùng cho biểu đồ Admin Dashboard.
+   */
+  async getChartData(days = 7): Promise<
+    {
+      date: string;
+      revenue: number;
+      transactions: number;
+      topups: number;
+    }[]
+  > {
+    const result: { date: string; revenue: number; transactions: number; topups: number }[] = [];
+
+    for (let i = days - 1; i >= 0; i--) {
+      const from = new Date();
+      from.setDate(from.getDate() - i);
+      from.setHours(0, 0, 0, 0);
+
+      const to = new Date(from);
+      to.setHours(23, 59, 59, 999);
+
+      const row = await this.repo
+        .createQueryBuilder('tx')
+        .select("COALESCE(SUM(CASE WHEN tx.status = 'success' AND tx.type = 'debit' THEN tx.amount ELSE 0 END), 0)", 'revenue')
+        .addSelect("COUNT(CASE WHEN tx.status = 'success' AND tx.type = 'debit' THEN 1 END)", 'transactions')
+        .addSelect("COUNT(CASE WHEN tx.status = 'success' AND tx.type = 'credit' THEN 1 END)", 'topups')
+        .where('tx.createdAt BETWEEN :from AND :to', { from, to })
+        .getRawOne();
+
+      result.push({
+        date: from.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
+        revenue: parseInt(row.revenue, 10) || 0,
+        transactions: parseInt(row.transactions, 10) || 0,
+        topups: parseInt(row.topups, 10) || 0,
+      });
+    }
+
+    return result;
   }
 }

@@ -23,4 +23,11 @@ export const transactionApi = {
       totalStudents: number;
       totalMerchants: number;
     }>>('/transactions/stats'),
+
+  chartData: (days = 7) =>
+    api.get<ApiResponse<{ date: string; revenue: number; transactions: number; topups: number }[]>>(
+      '/transactions/chart',
+      { params: { days } }
+    ),
 };
+

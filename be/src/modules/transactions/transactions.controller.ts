@@ -62,4 +62,11 @@ export class TransactionsController {
   async getStats() {
     return this.service.getStats();
   }
+
+  @Get('chart')
+  @UseGuards(AuthGuard('jwt'))
+  async getChartData(@Param() _p: any, @Req() req: any) {
+    const days = parseInt(req.query?.days, 10) || 7;
+    return this.service.getChartData(days);
+  }
 }
