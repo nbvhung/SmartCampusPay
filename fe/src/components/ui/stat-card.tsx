@@ -10,11 +10,11 @@ interface StatCardProps {
 
 export function StatCard({ title, value, icon, trend, className = '' }: StatCardProps) {
   return (
-    <div className={`bg-white rounded-xl border border-gray-200 p-5 shadow-sm ${className}`}>
+    <div className={`stat-card bg-white rounded-2xl border border-gray-200 p-5 shadow-sm ${className}`}>
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm font-medium text-gray-500">{title}</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
+          <p className="text-3xl tracking-tight font-bold text-gray-900 mt-3">{value}</p>
           {trend && (
             <p className={`text-xs mt-1 flex items-center gap-1 ${trend.isUp ? 'text-green-600' : 'text-red-600'}`}>
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -24,7 +24,7 @@ export function StatCard({ title, value, icon, trend, className = '' }: StatCard
             </p>
           )}
         </div>
-        {icon && <div className="text-gray-400">{icon}</div>}
+        {icon && <div className="stat-icon">{icon}</div>}
       </div>
     </div>
   );

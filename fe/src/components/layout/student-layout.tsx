@@ -1,79 +1,36 @@
 'use client';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Plus, History, User, Monitor, LogOut } from 'lucide-react';
+import { LayoutDashboard, Plus, History, User, Monitor, LogOut, Loader2 } from 'lucide-react';
 import { authApi } from '@/lib/auth-api';
-
-interface StudentLayoutProps {
-  children: ReactNode;
-  title?: string;
-}
-
+import { PtitBrand } from '@/components/ui/ptit-brand';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 const navItems = [
   { href: '/student/dashboard', label: 'Tổng quan', icon: LayoutDashboard },
   { href: '/student/topup', label: 'Nạp tiền', icon: Plus },
-  { href: '/student/profile', label: 'Hồ sơ', icon: User },
   { href: '/student/transactions', label: 'Lịch sử', icon: History },
+  { href: '/student/profile', label: 'Hồ sơ', icon: User },
 ];
-
-export function StudentLayout({ children, title }: StudentLayoutProps) {
+export function StudentLayout({ children, title }: { children: ReactNode; title?: string }) {
   const pathname = usePathname();
   const router = useRouter();
-
+  const [leaving, setLeaving] = useState(false);
   async function handleLogout() {
-    try { await authApi.logout(); } catch {}
+    if (leaving) return;
+    setLeaving(true);
+    try { await authApi.logout(); } catch { /* return to login */ }
     router.push('/login');
   }
-
-  return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <Link href="/student/dashboard" className="font-bold text-lg text-gray-900">
-              SmartCampusPay
-            </Link>
-            <nav className="hidden sm:flex items-center gap-1">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const isActive = pathname === item.href;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-                      isActive ? 'bg-red-50 text-red-700 font-medium' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                    {item.label}
-                  </Link>
-                );
-              })}
-              <Link
-                href="/pos"
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm text-green-600 hover:bg-green-50 transition-colors"
-              >
-                <Monitor className="w-4 h-4" />
-                POS
-              </Link>
-            </nav>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-red-500 transition-colors"
-          >
-            <LogOut className="w-4 h-4" />
-            Đăng xuất
-          </button>
-        </div>
-      </header>
-
-      <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-6">
-        {title && <h1 className="text-2xl font-bold text-gray-900 mb-6">{title}</h1>}
-        {children}
-      </main>
-    </div>
-  );
+  return <div className="student-shell">
+    <a className="skip-link" href="#main-content">Đến nội dung chính</a>
+    <header className="student-header"><div className="student-header-inner">
+      <Link href="/student/dashboard" aria-label="SmartCampusPay — trang sinh viên"><PtitBrand /></Link>
+      <nav className="student-desktop-nav" aria-label="Điều hướng sinh viên">{navItems.map(({ href, label, icon: Icon }) => <Link key={href} href={href} className={pathname === href ? 'student-nav-link is-active' : 'student-nav-link'} aria-current={pathname === href ? 'page' : undefined}><Icon size={17} />{label}</Link>)}</nav>
+      <div className="header-actions"><Link href="/pos" className="icon-button student-pos-link" aria-label="Thiết bị POS" title="Thiết bị POS"><Monitor size={19} /></Link><ThemeToggle /><button disabled={leaving} onClick={handleLogout} className="icon-button logout-button" aria-label="Đăng xuất" title="Đăng xuất">{leaving ? <Loader2 className="animate-spin" size={19} /> : <LogOut size={19} />}</button></div>
+    </div></header>
+    <main id="main-content" className="student-content">{title && <div className="page-heading"><span className="header-eyebrow">KHÔNG GIAN SINH VIÊN</span><h1>{title}</h1></div>}{children}</main>
+    <footer className="student-footer">SmartCampusPay · PTIT<span>Thanh toán gọn gàng, mỗi ngày.</span></footer>
+    <nav className="student-mobile-nav" aria-label="Điều hướng sinh viên">{navItems.map(({ href, label, icon: Icon }) => <Link key={href} href={href} className={pathname === href ? 'is-active' : ''} aria-current={pathname === href ? 'page' : undefined}><Icon size={20} /><span>{label}</span></Link>)}</nav>
+  </div>;
 }

@@ -1,6 +1,8 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { Wallet, TrendingUp, Receipt, CreditCard } from 'lucide-react';
+import { Wallet, TrendingUp, Receipt, CreditCard, Plus, ArrowUpRight } from 'lucide-react';
+import Link from 'next/link';
+import { PtitBrand } from '@/components/ui/ptit-brand';
 import { StudentLayout } from '@/components/layout/student-layout';
 import { StatCard } from '@/components/ui/stat-card';
 import { DataTable, type Column } from '@/components/ui/data-table';
@@ -18,8 +20,8 @@ export default function StudentDashboardPage() {
   const balance = student?.accounts?.[0]?.balance ?? 0;
 
   useEffect(() => {
-    if (!user) return;
-    transactionApi.listByStudent((user as any).studentCode, { limit: 10 }).then((r) => setRecentTxs(r.data.data)).catch(() => {})
+    if (!user || !('studentCode' in user)) return;
+    transactionApi.listByStudent(user.studentCode, { limit: 10 }).then((r) => setRecentTxs(r.data.data)).catch(() => {})
       .finally(() => setLoading(false));
   }, [user]);
 
@@ -44,6 +46,7 @@ export default function StudentDashboardPage() {
 
   return (
     <StudentLayout>
+      <div className="dashboard-welcome"><div><span className="header-eyebrow">VÍ SINH VIÊN · PTIT</span><h1>Xin chào, {student?.fullName || student?.studentCode}.</h1><p>Quản lý ví và theo dõi thanh toán trong khuôn viên.</p></div><Link href="/student/topup" className="quick-action"><Plus size={17} />Nạp tiền vào ví<ArrowUpRight size={16} /></Link></div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <StatCard title="Số dư ví" value={`${balance.toLocaleString()}đ`} icon={<Wallet className="w-6 h-6" />} />
         <StatCard title="Giao dịch hôm nay" value={todayTxs.length.toString()} icon={<TrendingUp className="w-6 h-6" />} />
@@ -58,10 +61,10 @@ export default function StudentDashboardPage() {
             <h2 className="font-semibold text-gray-900">Thẻ của tôi</h2>
           </div>
           <div className="p-5">
-            <div className="flex gap-4">
+            <div className="flex gap-4 overflow-x-auto pb-2">
               {student.cards.map(card => (
                 <div key={card.id} className="bg-gradient-to-br from-red-500 to-red-700 text-white rounded-xl p-4 min-w-[280px] shadow-md">
-                  <p className="text-xs text-red-200 mb-1">Thẻ sinh viên</p>
+                  <div className="flex items-center justify-between mb-3"><p className="text-xs text-red-200">Thẻ sinh viên · PTIT</p><PtitBrand compact /></div>
                   <p className="font-mono text-lg tracking-wider">{card.uid}</p>
                   <div className="flex items-center justify-between mt-3">
                     <span className="text-xs text-red-200">{card.chipType}</span>

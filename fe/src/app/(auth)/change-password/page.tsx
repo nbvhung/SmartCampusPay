@@ -1,7 +1,10 @@
 'use client';
 import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { Lock, CheckCircle, Loader2 } from 'lucide-react';
+import { CheckCircle, Loader2 } from 'lucide-react';
+import axios from 'axios';
+import { PtitBrand } from '@/components/ui/ptit-brand';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { authApi } from '@/lib/auth-api';
 
 export default function ChangePasswordPage() {
@@ -32,8 +35,8 @@ export default function ChangePasswordPage() {
       await authApi.changePassword({ newPassword });
       setSuccess(true);
       setTimeout(() => router.push('/login'), 2000);
-    } catch (err: any) {
-      const msg = err?.response?.data?.message || 'Đổi mật khẩu thất bại';
+    } catch (err: unknown) {
+      const msg = axios.isAxiosError(err) ? err.response?.data?.message || 'Đổi mật khẩu thất bại' : 'Đổi mật khẩu thất bại';
       setError(msg);
     } finally {
       setIsLoading(false);
@@ -41,14 +44,12 @@ export default function ChangePasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-900 to-red-950">
-      <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl shadow-2xl p-8 w-full max-w-md">
+    <div className="standalone-shell">
+      <header className="standalone-header"><PtitBrand /><ThemeToggle /></header>
+      <main className="standalone-content"><div className="bg-white border border-gray-200 rounded-2xl shadow-sm p-7 w-full">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-red-500 rounded-2xl mb-4 shadow-lg">
-            <Lock className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-white">Đặt mật khẩu mới</h1>
-          <p className="text-red-200 text-sm mt-2">
+          <h1 className="text-2xl font-bold text-gray-900">Đặt mật khẩu mới</h1>
+          <p className="text-gray-500 text-sm mt-3 leading-relaxed">
             Bạn đang đăng nhập lần đầu. Vui lòng đặt mật khẩu mới để bảo mật tài khoản.
           </p>
         </div>
@@ -58,13 +59,13 @@ export default function ChangePasswordPage() {
             <div className="inline-flex items-center justify-center w-16 h-16 bg-green-500/20 border border-green-400/40 rounded-full mb-4">
               <CheckCircle className="w-8 h-8 text-green-400" />
             </div>
-            <p className="text-white font-semibold">Đổi mật khẩu thành công!</p>
-            <p className="text-red-200 text-sm mt-1">Đang chuyển về trang đăng nhập...</p>
+            <p className="text-gray-900 font-semibold" role="status">Đổi mật khẩu thành công!</p>
+            <p className="text-gray-500 text-sm mt-1">Đang chuyển về trang đăng nhập...</p>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-red-100 mb-1">
+              <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 mb-2">
                 Mật khẩu mới
               </label>
               <input
@@ -75,12 +76,13 @@ export default function ChangePasswordPage() {
                 minLength={6}
                 autoComplete="new-password"
                 placeholder="Ít nhất 6 ký tự"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-red-300 focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-transparent transition"
+                disabled={isLoading}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 transition"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-red-100 mb-1">
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-2">
                 Xác nhận mật khẩu
               </label>
               <input
@@ -91,12 +93,13 @@ export default function ChangePasswordPage() {
                 minLength={6}
                 autoComplete="new-password"
                 placeholder="Nhập lại mật khẩu mới"
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-red-300 focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-transparent transition"
+                disabled={isLoading}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 transition"
               />
             </div>
 
             {error && (
-              <div className="bg-red-500/20 border border-red-400/40 rounded-lg px-4 py-3 text-red-200 text-sm">
+              <div role="alert" className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-700 text-sm">
                 {error}
               </div>
             )}
@@ -104,7 +107,7 @@ export default function ChangePasswordPage() {
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-3 bg-red-500 hover:bg-red-400 disabled:opacity-60 disabled:cursor-not-allowed text-white font-semibold rounded-xl transition-all duration-200 shadow-lg hover:shadow-red-500/30 hover:-translate-y-0.5 active:translate-y-0"
+              className="w-full py-3 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white font-semibold rounded-xl transition-colors"
             >
               {isLoading ? (
                 <span className="flex items-center justify-center gap-2">
@@ -114,12 +117,12 @@ export default function ChangePasswordPage() {
               ) : 'Xác nhận đổi mật khẩu'}
             </button>
 
-            <p className="text-center text-xs text-red-300 mt-2">
+            <p className="text-center text-xs text-gray-500 mt-2 leading-relaxed">
               Sau khi đổi mật khẩu, bạn sẽ được yêu cầu đăng nhập lại.
             </p>
           </form>
         )}
-      </div>
+      </div></main>
     </div>
   );
 }

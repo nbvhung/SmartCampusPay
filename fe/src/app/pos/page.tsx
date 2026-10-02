@@ -1,4 +1,6 @@
 'use client';
+import { PtitBrand } from '@/components/ui/ptit-brand';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { CreditCard, Loader2, CheckCircle, XCircle, Store } from 'lucide-react';
@@ -102,12 +104,11 @@ export default function PosPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className="standalone-shell">
+      <header className="standalone-header"><PtitBrand /><ThemeToggle /></header>
+      <main className="standalone-content">
         <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 bg-red-500 rounded-2xl mb-3 shadow-lg">
-            <Store className="w-7 h-7 text-white" />
-          </div>
+          <div className="inline-flex items-center justify-center w-14 h-14 bg-red-50 text-red-600 rounded-2xl mb-3"><Store className="w-7 h-7" /></div>
           <h1 className="text-2xl font-bold text-gray-900">POS Thanh toán</h1>
           <p className="text-sm text-gray-500 mt-1">Thiết bị điểm thanh toán</p>
         </div>
@@ -190,7 +191,7 @@ export default function PosPage() {
             Dùng API Key từ trang quản lý điểm thanh toán để test
           </p>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

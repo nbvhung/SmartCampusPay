@@ -87,7 +87,7 @@ export default function StudentProfilePage() {
               </div>
               <div>
                 <label className="text-xs text-gray-500">Email</label>
-                <p className="font-medium text-gray-900">{student.email}</p>
+                <p className="font-medium text-gray-900 break-all">{student.email}</p>
               </div>
               <div>
                 <label className="text-xs text-gray-500">Khoa</label>
@@ -112,7 +112,7 @@ export default function StudentProfilePage() {
             <h2 className="font-semibold text-gray-900">Thông tin ví</h2>
           </div>
           <div className="p-5 space-y-4">
-            <div className="grid grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className="text-xs text-gray-500">Số dư</label>
                 <p className="text-xl font-bold text-gray-900">{(student.accounts?.[0]?.balance ?? 0).toLocaleString()}đ</p>

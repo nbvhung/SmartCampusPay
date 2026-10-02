@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2, ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Loader2, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, ReceiptText } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 export interface Column<T> {
@@ -21,7 +21,7 @@ interface DataTableProps<T> {
   onSort?: (key: string, direction: 'asc' | 'desc') => void;
 }
 
-export function DataTable<T extends Record<string, any>>({
+export function DataTable<T extends { id?: string }>({
   columns, data, loading, emptyMessage = 'Không có dữ liệu',
   page, totalPages, onPageChange, onSort,
 }: DataTableProps<T>) {
@@ -37,7 +37,7 @@ export function DataTable<T extends Record<string, any>>({
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
+      <div className="flex items-center justify-center py-12" role="status" aria-label="Đang tải dữ liệu">
         <Loader2 className="w-8 h-8 animate-spin text-red-600" />
       </div>
     );
@@ -45,7 +45,7 @@ export function DataTable<T extends Record<string, any>>({
 
   if (!data.length) {
     return (
-      <div className="text-center py-12 text-gray-500">{emptyMessage}</div>
+      <div className="text-center py-16 text-gray-500"><span className="inline-flex bg-gray-100 p-3 rounded-2xl mb-3"><ReceiptText size={24} /></span><p className="text-sm">{emptyMessage}</p></div>
     );
   }
 
@@ -58,14 +58,14 @@ export function DataTable<T extends Record<string, any>>({
               <th
                 key={col.key}
                 className={`text-left px-4 py-3 font-medium text-gray-500 ${col.sortable ? 'cursor-pointer hover:text-gray-700 select-none' : ''} ${col.className || ''}`}
-                onClick={() => col.sortable && handleSort(col.key)}
+                aria-sort={col.sortable ? sortKey === col.key ? sortDir === 'asc' ? 'ascending' : 'descending' : 'none' : undefined}
               >
-                <span className="flex items-center gap-1">
+                {col.sortable ? <button type="button" className="flex items-center gap-1" onClick={() => handleSort(col.key)}>
                   {col.header}
                   {col.sortable && sortKey === col.key && (
                     sortDir === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />
                   )}
-                </span>
+                </button> : col.header}
               </th>
             ))}
           </tr>
@@ -75,7 +75,7 @@ export function DataTable<T extends Record<string, any>>({
             <tr key={item.id || i} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
               {columns.map((col) => (
                 <td key={col.key} className={`px-4 py-3 text-gray-700 ${col.className || ''}`}>
-                  {col.render ? col.render(item) : item[col.key]}
+                  {col.render ? col.render(item) : String((item as Record<string, unknown>)[col.key] ?? '')}
                 </td>
               ))}
             </tr>

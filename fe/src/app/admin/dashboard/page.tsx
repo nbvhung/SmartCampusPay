@@ -152,7 +152,7 @@ export default function AdminDashboardPage() {
   return (
     <AdminLayout title="Tổng quan">
       {/* ── Header actions ── */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
           <h1 className="text-xl font-bold text-gray-900">Bảng điều khiển</h1>
           <p className="text-sm text-gray-500 mt-0.5">
@@ -234,7 +234,7 @@ export default function AdminDashboardPage() {
           </div>
           <ResponsiveContainer width="100%" height={240}>
             <BarChart data={chart} barGap={2} barCategoryGap="25%">
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--line)" vertical={false} />
               <XAxis
                 dataKey="date"
                 tick={{ fontSize: 11, fill: '#9ca3af' }}

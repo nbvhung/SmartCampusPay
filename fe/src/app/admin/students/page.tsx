@@ -211,14 +211,15 @@ export default function AdminStudentsPage() {
   return (
     <AdminLayout title="Quản lý sinh viên">
       {/* Header with search and actions */}
-      <div className="flex items-center justify-between mb-4 gap-3">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-wrap items-center justify-between mb-5 gap-3">
+        <div className="relative w-full sm:flex-1 sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             ref={searchInput}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Tìm kiếm MSSV, họ tên, email, SĐT, khoa..."
+            aria-label="Tìm kiếm sinh viên"
             className="w-full pl-9 pr-9 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
           />
           {search && (
@@ -232,7 +233,7 @@ export default function AdminStudentsPage() {
             </button>
           )}
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 shrink-0 flex-wrap">
           <button
             onClick={openAdd}
             className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-1.5"

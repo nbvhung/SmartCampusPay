@@ -11,3 +11,4 @@ build/
 Thumbs.db
 .vscode/
 .backups/
+.preview/

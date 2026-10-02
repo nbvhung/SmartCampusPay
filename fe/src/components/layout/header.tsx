@@ -1,40 +1,27 @@
 'use client';
-import { LogOut } from 'lucide-react';
+import { useState } from 'react';
+import { LogOut, Menu, Loader2 } from 'lucide-react';
 import { authApi } from '@/lib/auth-api';
 import { useRouter } from 'next/navigation';
-
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 interface HeaderProps {
   title: string;
   user?: { fullName?: string; studentCode?: string; role?: string } | null;
+  menuOpen?: boolean;
+  onMenuToggle?: () => void;
 }
-
-export function Header({ title, user }: HeaderProps) {
+export function Header({ title, user, menuOpen, onMenuToggle }: HeaderProps) {
   const router = useRouter();
-
+  const [leaving, setLeaving] = useState(false);
   async function handleLogout() {
-    try { await authApi.logout(); } catch {}
+    if (leaving) return;
+    setLeaving(true);
+    try { await authApi.logout(); } catch { /* return to login */ }
     router.push('/login');
   }
-
-  return (
-    <header className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between shrink-0">
-      <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-
-      {user && (
-        <div className="flex items-center gap-3">
-          <div className="text-right">
-            <p className="text-sm font-medium text-gray-900">{user.fullName || user.studentCode}</p>
-            <p className="text-xs text-gray-500 capitalize">{user.role === 'student' ? 'Sinh viên' : 'Quản trị'}</p>
-          </div>
-          <button
-            onClick={handleLogout}
-            className="p-2 text-gray-400 hover:text-red-500 transition-colors rounded-lg hover:bg-gray-100"
-            title="Đăng xuất"
-          >
-            <LogOut className="w-5 h-5" />
-          </button>
-        </div>
-      )}
-    </header>
-  );
+  const name = user?.fullName || user?.studentCode || 'Quản trị viên';
+  return <header className="app-header">
+    <div className="header-title"><button className="mobile-menu icon-button" onClick={onMenuToggle} aria-label="Mở menu điều hướng" aria-expanded={menuOpen} aria-controls="admin-navigation"><Menu size={21} /></button><div><span className="header-eyebrow">SMARTCAMPUSPAY</span><h2>{title}</h2></div></div>
+    <div className="header-actions"><ThemeToggle />{user && <><div className="header-user"><span className="user-avatar">{name.slice(0, 1).toUpperCase()}</span><div><p>{name}</p><small>{user.role === 'student' ? 'Sinh viên' : 'Quản trị viên'}</small></div></div><button disabled={leaving} onClick={handleLogout} className="icon-button logout-button" aria-label="Đăng xuất" title="Đăng xuất">{leaving ? <Loader2 className="animate-spin" size={19} /> : <LogOut size={19} />}</button></>}</div>
+  </header>;
 }
