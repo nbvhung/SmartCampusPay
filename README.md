@@ -1,5 +1,7 @@
 # SmartCampusPay
 
+Tài liệu tích hợp: [API thiết bị v1.1](docs/hardware-api.md) · [Kiểm thử và nâng database](docs/integration-validation.md).
+
 Hệ thống thanh toán nội bộ không tiền mặt cho thẻ sinh viên gắn chip NFC/RFID.
 
 ## Kiến trúc
@@ -86,6 +88,7 @@ SmartCampusPay/
 cd be
 npm install
 cp .env.example .env
+npm run migration:run
 npm run start:dev
 
 # Frontend
@@ -104,7 +107,9 @@ npm run dev
 ### Transactions
 - `POST /api/v1/transactions/pay` — Payment (API key required)
 - `POST /api/v1/transactions/pay/card` — Pay by card UID
-- `POST /api/v1/transactions/topup` — Top-up
+- `POST /api/v1/sepay/create-payment` — Tạo QR nạp tiền cho sinh viên
+- `POST /api/v1/sepay/webhook` — Nhận kết quả chuyển khoản ngân hàng
+- `GET /api/v1/transactions/payments/:key` — Thiết bị xác minh kết quả thanh toán
 - `GET /api/v1/transactions` — List all
 - `GET /api/v1/transactions/student/:code` — By student
 - `GET /api/v1/transactions/stats/daily` — Daily stats

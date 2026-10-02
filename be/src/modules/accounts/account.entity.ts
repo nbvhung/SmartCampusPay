@@ -7,6 +7,7 @@ import {
   ManyToOne,
   JoinColumn,
   OneToMany,
+  Check,
 } from 'typeorm';
 import { Student } from '../students/student.entity';
 import { Transaction } from '../transactions/transaction.entity';
@@ -18,6 +19,10 @@ export enum AccountStatus {
 }
 
 @Entity('accounts')
+@Check(
+  'CHK_accounts_money',
+  '"balance" >= 0 AND "dailySpent" >= 0 AND "dailyLimit" >= 0',
+)
 export class Account {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -34,7 +39,10 @@ export class Account {
   @Column({ type: 'enum', enum: AccountStatus, default: AccountStatus.ACTIVE })
   status: AccountStatus;
 
-  @Column()
+  @Column({ type: 'date', nullable: true })
+  dailySpentDate: string | null;
+
+  @Column({ unique: true })
   studentId: string;
 
   @ManyToOne(() => Student, (student) => student.accounts)

@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   ManyToOne,
   JoinColumn,
+  Check,
 } from 'typeorm';
 import { Student } from '../students/student.entity';
 import { Account } from '../accounts/account.entity';
@@ -23,6 +24,7 @@ export enum TransactionStatus {
 }
 
 @Entity('transactions')
+@Check('CHK_transactions_amount', '"amount" >= 0')
 export class Transaction {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -42,6 +44,12 @@ export class Transaction {
 
   @Column({ unique: true, length: 64 })
   idempotencyKey: string;
+
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  cardUid: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  expiresAt: Date | null;
 
   @Column({ unique: true, length: 32, nullable: true })
   referenceCode: string;

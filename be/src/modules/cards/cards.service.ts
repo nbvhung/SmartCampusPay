@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { normalizeUid } from '../../common/utils/payment';
 import { Card, CardStatus } from './card.entity';
 
 @Injectable()
@@ -11,7 +12,7 @@ export class CardsService {
   ) {}
 
   async create(data: Partial<Card>): Promise<Card> {
-    return this.repo.save(data);
+    return this.repo.save({ ...data, uid: normalizeUid(data.uid!) });
   }
 
   async findAll(): Promise<Card[]> {
@@ -20,7 +21,7 @@ export class CardsService {
 
   async findByUid(uid: string): Promise<Card> {
     const card = await this.repo.findOne({
-      where: { uid },
+      where: { uid: normalizeUid(uid) },
       relations: { student: { accounts: true } },
     });
     if (!card) throw new NotFoundException('Card not found');

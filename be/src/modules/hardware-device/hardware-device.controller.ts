@@ -7,6 +7,7 @@ import {
   UseGuards,
   HttpCode,
   HttpStatus,
+  Req,
 } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { HardwareDeviceService } from './hardware-device.service';
@@ -37,15 +38,15 @@ export class HardwareDeviceController {
   @UseGuards(ApiKeyGuard)
   @Post('topup/qr')
   @HttpCode(HttpStatus.OK)
-  createTopupQr(@Body() dto: TopupQrDto) {
-    return this.service.createTopupQr(dto);
+  createTopupQr(@Body() dto: TopupQrDto, @Req() req: any) {
+    return this.service.createTopupQr(dto, req.merchant.id);
   }
 
   @Public()
   @UseGuards(ApiKeyGuard)
   @Get('topup/status/:refCode')
-  getTopupStatus(@Param('refCode') refCode: string) {
-    return this.service.getTopupStatus(refCode);
+  getTopupStatus(@Param('refCode') refCode: string, @Req() req: any) {
+    return this.service.getTopupStatus(refCode, req.merchant.id);
   }
 
   @Public()

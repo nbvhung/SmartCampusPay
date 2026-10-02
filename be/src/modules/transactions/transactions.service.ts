@@ -1,22 +1,31 @@
 import {
   Injectable,
   BadRequestException,
+  ConflictException,
   Logger,
+  NotFoundException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  QueryFailedError,
+  Repository,
+} from 'typeorm';
 import {
   Transaction,
   TransactionType,
   TransactionStatus,
 } from './transaction.entity';
 import { Student } from '../students/student.entity';
+import { Account, AccountStatus } from '../accounts/account.entity';
 import { Merchant } from '../merchants/merchant.entity';
-import { StudentsService } from '../students/students.service';
-import { AccountsService } from '../accounts/accounts.service';
 import { CardsService } from '../cards/cards.service';
+import { Card, CardStatus } from '../cards/card.entity';
 import { RedisService } from '../redis/redis.service';
 import { PayDto } from './dto/pay.dto';
+import { campusDate, normalizeUid } from '../../common/utils/payment';
 
 @Injectable()
 export class TransactionsService {
@@ -25,23 +34,37 @@ export class TransactionsService {
   constructor(
     @InjectRepository(Transaction)
     private readonly repo: Repository<Transaction>,
-    private readonly studentsService: StudentsService,
-    private readonly accountsService: AccountsService,
     private readonly cardsService: CardsService,
     private readonly redis: RedisService,
     private readonly dataSource: DataSource,
   ) {}
 
-  async pay(dto: PayDto, merchantId: string): Promise<Transaction> {
+  async pay(
+    dto: PayDto & { cardUid?: string },
+    merchantId: string,
+  ): Promise<Transaction> {
+    if (
+      !Number.isSafeInteger(dto.amount) ||
+      dto.amount < 100 ||
+      dto.amount > 10000000
+    )
+      throw new BadRequestException({
+        code: 'INVALID_AMOUNT',
+        message: 'Invalid amount',
+      });
     const lockKey = `idem:${dto.idempotencyKey}`;
-    const locked = await this.redis.acquireLock(lockKey, 5);
-    if (!locked) {
+    const lockToken = await this.redis.acquireLock(lockKey, 15);
+    if (!lockToken) {
       this.logger.warn(`Contention on idempotencyKey: ${dto.idempotencyKey}`);
       const existing = await this.repo.findOne({
         where: { idempotencyKey: dto.idempotencyKey },
       });
-      if (existing) return existing;
-      throw new BadRequestException('Request in progress. Try again.');
+      if (existing)
+        return this.validateIdempotentReplay(existing, dto, merchantId);
+      throw new ServiceUnavailableException({
+        code: 'PAYMENT_IN_PROGRESS',
+        message: 'Request in progress. Retry with the same key.',
+      });
     }
 
     try {
@@ -50,34 +73,130 @@ export class TransactionsService {
       });
       if (existing) {
         this.logger.warn(`Duplicate transaction: ${dto.idempotencyKey}`);
-        return existing;
+        return this.validateIdempotentReplay(existing, dto, merchantId);
       }
 
-      const student = await this.studentsService.findByCode(dto.studentCode);
-      if (!student || !student.isActive)
-        throw new BadRequestException('Invalid student');
+      return await this.dataSource.transaction('READ COMMITTED', (manager) =>
+        this.executePayment(manager, dto, merchantId),
+      );
+    } catch (error) {
+      // Redis is only an optimization. The database unique constraint is the
+      // final arbiter when two instances race with the same idempotency key.
+      if (this.isUniqueViolation(error)) {
+        const existing = await this.repo.findOne({
+          where: { idempotencyKey: dto.idempotencyKey },
+        });
+        if (existing)
+          return this.validateIdempotentReplay(existing, dto, merchantId);
+      }
+      throw error;
+    } finally {
+      await this.redis.releaseLock(lockKey, lockToken);
+    }
+  }
 
-      const account = await this.accountsService.findByStudentId(student.id);
-      if (account.status !== 'active')
-        throw new BadRequestException('Account is frozen');
+  private async executePayment(
+    manager: EntityManager,
+    dto: PayDto & { cardUid?: string },
+    merchantId: string,
+  ): Promise<Transaction> {
+    const existing = await manager.findOne(Transaction, {
+      where: { idempotencyKey: dto.idempotencyKey },
+    });
+    if (existing)
+      return this.validateIdempotentReplay(existing, dto, merchantId);
 
-      await this.accountsService.debit(student.id, dto.amount);
+    const student = await manager.findOne(Student, {
+      where: { studentCode: dto.studentCode },
+      lock: { mode: 'pessimistic_read' },
+    });
+    if (!student || !student.isActive)
+      throw new BadRequestException('Invalid student');
 
-      const tx = this.repo.create({
+    if (dto.cardUid) {
+      const card = await manager.findOne(Card, {
+        where: { uid: dto.cardUid },
+        lock: { mode: 'pessimistic_read' },
+      });
+      if (
+        !card ||
+        card.status !== CardStatus.ACTIVE ||
+        card.studentId !== student.id
+      )
+        throw new BadRequestException('Card is not active');
+    }
+
+    // Serializes all balance changes for this wallet. Balance validation and
+    // both writes are committed or rolled back as a single database unit.
+    const account = await manager.findOne(Account, {
+      where: { studentId: student.id },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!account) throw new BadRequestException('Account not found');
+    // A concurrent replay may have committed while this request waited for
+    // the wallet. Check again before applying balance/status validation.
+    const committed = await manager.findOne(Transaction, {
+      where: { idempotencyKey: dto.idempotencyKey },
+    });
+    if (committed)
+      return this.validateIdempotentReplay(committed, dto, merchantId);
+    if (account.status !== AccountStatus.ACTIVE)
+      throw new BadRequestException('Account is frozen');
+    if (account.balance < dto.amount)
+      throw new BadRequestException('Insufficient balance');
+    const today = campusDate();
+    if (account.dailySpentDate !== today) {
+      account.dailySpent = 0;
+      account.dailySpentDate = today;
+    }
+    if (account.dailySpent + dto.amount > account.dailyLimit)
+      throw new BadRequestException('Daily limit exceeded');
+
+    account.balance -= dto.amount;
+    account.dailySpent += dto.amount;
+    await manager.save(account);
+
+    return manager.save(
+      manager.create(Transaction, {
         amount: dto.amount,
         type: TransactionType.DEBIT,
         status: TransactionStatus.SUCCESS,
         idempotencyKey: dto.idempotencyKey,
         description: dto.description || 'Payment',
-        studentCode: dto.studentCode,
+        studentCode: student.studentCode,
         studentId: student.id,
         accountId: account.id,
         merchantId,
-      });
-      return this.repo.save(tx);
-    } finally {
-      await this.redis.releaseLock(lockKey);
+        cardUid: dto.cardUid ?? null,
+      }),
+    );
+  }
+
+  private validateIdempotentReplay(
+    existing: Transaction,
+    dto: PayDto & { cardUid?: string },
+    merchantId: string,
+  ): Transaction {
+    if (
+      existing.merchantId !== merchantId ||
+      existing.studentCode !== dto.studentCode ||
+      Number(existing.amount) !== Number(dto.amount) ||
+      existing.type !== TransactionType.DEBIT ||
+      (existing.cardUid ?? null) !== (dto.cardUid ?? null)
+    ) {
+      throw new ConflictException(
+        'Idempotency key was already used with a different request',
+      );
     }
+    return existing;
+  }
+
+  private isUniqueViolation(error: unknown): boolean {
+    return (
+      error instanceof QueryFailedError &&
+      (error as QueryFailedError & { driverError?: { code?: string } })
+        .driverError?.code === '23505'
+    );
   }
 
   async payByCard(
@@ -86,19 +205,49 @@ export class TransactionsService {
     amount: number,
     idempotencyKey: string,
   ): Promise<Transaction> {
+    cardUid = normalizeUid(cardUid);
+    const existing = await this.repo.findOne({ where: { idempotencyKey } });
+    if (existing) {
+      return this.validateIdempotentReplay(
+        existing,
+        {
+          studentCode: existing.studentCode,
+          cardUid,
+          amount,
+          idempotencyKey,
+        },
+        merchantId,
+      );
+    }
     const card = await this.cardsService.findByUid(cardUid);
     if (card.status !== 'active')
       throw new BadRequestException('Card is not active');
-
+    if (!card.student) throw new BadRequestException('Invalid student');
     return this.pay(
       {
         studentCode: card.student.studentCode,
-        merchantId,
+        cardUid,
         amount,
         idempotencyKey,
       },
       merchantId,
     );
+  }
+
+  async findPayment(
+    idempotencyKey: string,
+    merchantId: string,
+  ): Promise<Transaction> {
+    const tx = await this.repo.findOne({
+      where: { idempotencyKey, merchantId, type: TransactionType.DEBIT },
+    });
+    if (!tx)
+      throw new NotFoundException({
+        code: 'PAYMENT_NOT_FOUND',
+        message:
+          'Payment not found. Retry the original request with the same key.',
+      });
+    return tx;
   }
 
   async findByStudent(studentCode: string): Promise<Transaction[]> {
@@ -154,7 +303,7 @@ export class TransactionsService {
       .createQueryBuilder('tx')
       .select('COUNT(*)', 'totalTransactions')
       .addSelect(
-        "COALESCE(SUM(CASE WHEN tx.status = 'success' THEN tx.amount ELSE 0 END), 0)",
+        "COALESCE(SUM(CASE WHEN tx.status = 'success' AND tx.type = 'debit' THEN tx.amount ELSE 0 END), 0)",
         'totalRevenue',
       )
       .getRawOne();
@@ -164,7 +313,7 @@ export class TransactionsService {
       .createQueryBuilder('tx')
       .select('COUNT(*)', 'todayTransactions')
       .addSelect(
-        "COALESCE(SUM(CASE WHEN tx.status = 'success' THEN tx.amount ELSE 0 END), 0)",
+        "COALESCE(SUM(CASE WHEN tx.status = 'success' AND tx.type = 'debit' THEN tx.amount ELSE 0 END), 0)",
         'todayRevenue',
       )
       .where('tx.createdAt >= :today', { today })
@@ -196,7 +345,12 @@ export class TransactionsService {
       topups: number;
     }[]
   > {
-    const result: { date: string; revenue: number; transactions: number; topups: number }[] = [];
+    const result: {
+      date: string;
+      revenue: number;
+      transactions: number;
+      topups: number;
+    }[] = [];
 
     for (let i = days - 1; i >= 0; i--) {
       const from = new Date();
@@ -208,14 +362,26 @@ export class TransactionsService {
 
       const row = await this.repo
         .createQueryBuilder('tx')
-        .select("COALESCE(SUM(CASE WHEN tx.status = 'success' AND tx.type = 'debit' THEN tx.amount ELSE 0 END), 0)", 'revenue')
-        .addSelect("COUNT(CASE WHEN tx.status = 'success' AND tx.type = 'debit' THEN 1 END)", 'transactions')
-        .addSelect("COUNT(CASE WHEN tx.status = 'success' AND tx.type = 'credit' THEN 1 END)", 'topups')
+        .select(
+          "COALESCE(SUM(CASE WHEN tx.status = 'success' AND tx.type = 'debit' THEN tx.amount ELSE 0 END), 0)",
+          'revenue',
+        )
+        .addSelect(
+          "COUNT(CASE WHEN tx.status = 'success' AND tx.type = 'debit' THEN 1 END)",
+          'transactions',
+        )
+        .addSelect(
+          "COUNT(CASE WHEN tx.status = 'success' AND tx.type = 'credit' THEN 1 END)",
+          'topups',
+        )
         .where('tx.createdAt BETWEEN :from AND :to', { from, to })
         .getRawOne();
 
       result.push({
-        date: from.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
+        date: from.toLocaleDateString('vi-VN', {
+          day: '2-digit',
+          month: '2-digit',
+        }),
         revenue: parseInt(row.revenue, 10) || 0,
         transactions: parseInt(row.transactions, 10) || 0,
         topups: parseInt(row.topups, 10) || 0,

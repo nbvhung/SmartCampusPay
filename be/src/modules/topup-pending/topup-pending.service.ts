@@ -13,6 +13,7 @@ import {
   TransactionStatus,
 } from '../transactions/transaction.entity';
 import { Account, AccountStatus } from '../accounts/account.entity';
+import { validateTopupAmount } from '../../common/utils/payment';
 import { Student } from '../students/student.entity';
 
 @Injectable()
@@ -34,16 +35,14 @@ export class TopupPendingService {
     bankName?: string;
     note?: string;
   }): Promise<TopupPending> {
-    const existing = await this.repo.findOne({
-      where: { transferId: input.transferId },
-    });
-    if (existing) return existing;
-
-    const entity = this.repo.create({
-      ...input,
-      status: TopupPendingStatus.PENDING,
-    });
-    return this.repo.save(entity);
+    await this.repo
+      .createQueryBuilder()
+      .insert()
+      .into(TopupPending)
+      .values({ ...input, status: TopupPendingStatus.PENDING })
+      .orIgnore()
+      .execute();
+    return this.repo.findOneByOrFail({ transferId: input.transferId });
   }
 
   async findAll(filter?: { status?: string }): Promise<TopupPending[]> {
@@ -57,20 +56,32 @@ export class TopupPendingService {
     studentCode: string,
     adminId: string,
   ): Promise<TopupPending> {
+    if (!/^[A-Za-z0-9]{5,20}$/.test(studentCode.trim()))
+      throw new BadRequestException('Invalid student code');
     return this.dataSource.transaction(async (manager) => {
-      const pending = await manager.findOne(TopupPending, { where: { id } });
+      const pending = await manager.findOne(TopupPending, {
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
       if (!pending)
         throw new NotFoundException('Không tìm thấy giao dịch chưa khớp');
       if (pending.status !== TopupPendingStatus.PENDING) {
         throw new BadRequestException('Giao dịch đã được xử lý');
       }
 
+      validateTopupAmount(pending.amount);
+      if (pending.note === 'recipient_account_mismatch')
+        throw new BadRequestException({
+          code: 'RECIPIENT_ACCOUNT_MISMATCH',
+          message:
+            'Tài khoản nhận tiền không khớp cấu hình SePay. Cần xác minh tài khoản nhận trước khi cộng tiền.',
+        });
       const student = await manager.findOne(Student, {
+        lock: { mode: 'pessimistic_read' },
         where: {
-          studentCode: Raw(
-            (alias) => `${alias} ILIKE :code`,
-            { code: studentCode.trim() },
-          ),
+          studentCode: Raw((alias) => `${alias} ILIKE :code`, {
+            code: studentCode.trim(),
+          }),
         },
       });
       if (!student || !student.isActive) {
@@ -87,13 +98,16 @@ export class TopupPendingService {
 
       const account = await manager.findOne(Account, {
         where: { studentId: student.id },
+        lock: { mode: 'pessimistic_write' },
       });
       if (!account)
         throw new NotFoundException('Không tìm thấy ví của sinh viên');
       if (account.status !== AccountStatus.ACTIVE)
         throw new BadRequestException('Ví đang bị đóng băng');
 
-      account.balance = Number(account.balance) + Number(pending.amount);
+      if (account.balance + pending.amount > 2147483647)
+        throw new BadRequestException('Balance overflow');
+      account.balance += pending.amount;
       await manager.save(account);
 
       const tx = manager.create(Transaction, {
@@ -101,7 +115,11 @@ export class TopupPendingService {
         type: TransactionType.CREDIT,
         status: TransactionStatus.SUCCESS,
         idempotencyKey: idemKey,
-        description: `Nạp tiền qua ngân hàng (xử lý thủ công) - ${pending.content}`,
+        description:
+          `Nạp tiền qua ngân hàng (xử lý thủ công) - ${pending.content}`.slice(
+            0,
+            255,
+          ),
         studentCode: student.studentCode,
         studentId: student.id,
         accountId: account.id,
@@ -121,16 +139,19 @@ export class TopupPendingService {
   }
 
   async ignore(id: string, adminId: string): Promise<TopupPending> {
-    const pending = await this.repo.findOne({ where: { id } });
-    if (!pending)
-      throw new NotFoundException('Không tìm thấy giao dịch chưa khớp');
-    if (pending.status !== TopupPendingStatus.PENDING) {
-      throw new BadRequestException('Giao dịch đã được xử lý');
-    }
-
-    pending.status = TopupPendingStatus.IGNORED;
-    pending.adminId = adminId;
-    pending.note = 'Bỏ qua bởi admin';
-    return this.repo.save(pending);
+    return this.dataSource.transaction(async (manager) => {
+      const pending = await manager.findOne(TopupPending, {
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!pending)
+        throw new NotFoundException('Không tìm thấy giao dịch chưa khớp');
+      if (pending.status !== TopupPendingStatus.PENDING)
+        throw new BadRequestException('Giao dịch đã được xử lý');
+      pending.status = TopupPendingStatus.IGNORED;
+      pending.adminId = adminId;
+      pending.note = 'Bỏ qua bởi admin';
+      return manager.save(pending);
+    });
   }
 }

@@ -8,7 +8,7 @@ export class AccountsTask {
 
   constructor(private readonly accountsService: AccountsService) {}
 
-  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT, { timeZone: 'Asia/Ho_Chi_Minh' })
   async handleResetDailySpent() {
     this.logger.log('Resetting daily spent for all accounts...');
     await this.accountsService.resetDailySpent();

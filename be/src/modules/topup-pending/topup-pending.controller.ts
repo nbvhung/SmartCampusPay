@@ -6,13 +6,13 @@ import {
   Param,
   Query,
   UseGuards,
-  BadRequestException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { TopupPendingService } from './topup-pending.service';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { MatchTopupDto, ListTopupDto } from './dto/match-topup.dto';
 
 @Controller('topup-pending')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -21,18 +21,17 @@ export class TopupPendingController {
   constructor(private readonly service: TopupPendingService) {}
 
   @Get()
-  findAll(@Query('status') status?: string) {
-    return this.service.findAll(status ? { status } : undefined);
+  findAll(@Query() dto: ListTopupDto) {
+    return this.service.findAll(dto);
   }
 
   @Post(':id/match')
   async match(
     @Param('id') id: string,
-    @Body('studentCode') studentCode: string,
+    @Body() dto: MatchTopupDto,
     @CurrentUser() user: any,
   ) {
-    if (!studentCode) throw new BadRequestException('Thiếu mã sinh viên');
-    return this.service.match(id, studentCode, user.id);
+    return this.service.match(id, dto.studentCode, user.id);
   }
 
   @Post(':id/ignore')

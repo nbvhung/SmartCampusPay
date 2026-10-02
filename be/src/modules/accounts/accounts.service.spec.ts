@@ -4,6 +4,7 @@ import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { AccountsService } from './accounts.service';
 import { Account, AccountStatus } from './account.entity';
+import { campusDate } from '../../common/utils/payment';
 import { Student } from '../students/student.entity';
 
 describe('AccountsService', () => {
@@ -17,6 +18,7 @@ describe('AccountsService', () => {
     balance: 100000,
     dailyLimit: 500000,
     dailySpent: 0,
+    dailySpentDate: campusDate(),
     status: AccountStatus.ACTIVE,
     studentId: 'student-uuid',
     student: mockStudent,
@@ -61,82 +63,23 @@ describe('AccountsService', () => {
     });
   });
 
-  describe('topup', () => {
-    it('should add balance to active account', async () => {
-      const account = createMockAccount({ balance: 50000 });
-      repo.findOne.mockResolvedValue(account);
-      repo.save.mockResolvedValue({ ...account, balance: 150000 });
-
-      const result = await service.topup('student-uuid', 100000);
-      expect(result.balance).toBe(150000);
-    });
-
-    it('should throw if amount is not positive', async () => {
-      await expect(service.topup('student-uuid', -1000)).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-
-    it('should throw if account is frozen', async () => {
-      repo.findOne.mockResolvedValue(
-        createMockAccount({ status: AccountStatus.FROZEN }),
-      );
-      await expect(service.topup('student-uuid', 50000)).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-  });
-
-  describe('debit', () => {
-    it('should deduct balance within limit', async () => {
-      const account = createMockAccount({ balance: 200000, dailySpent: 50000 });
-      repo.findOne.mockResolvedValue(account);
-      repo.save.mockResolvedValue({
-        ...account,
-        balance: 150000,
-        dailySpent: 100000,
+  describe('toggleFreeze', () => {
+    it('locks the wallet before changing status and preserves the balance', async () => {
+      const account = createMockAccount({ balance: 75000 });
+      const manager = {
+        findOne: jest.fn().mockResolvedValue(account),
+        save: jest.fn(async (value) => value),
+      };
+      Object.assign(repo, {
+        manager: { transaction: jest.fn(async (cb) => cb(manager)) },
       });
-
-      const result = await service.debit('student-uuid', 50000);
-      expect(result.balance).toBe(150000);
-      expect(result.dailySpent).toBe(100000);
-    });
-
-    it('should throw if insufficient balance', async () => {
-      repo.findOne.mockResolvedValue(createMockAccount({ balance: 10000 }));
-      await expect(service.debit('student-uuid', 50000)).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-
-    it('should throw if daily limit exceeded', async () => {
-      repo.findOne.mockResolvedValue(
-        createMockAccount({
-          balance: 500000,
-          dailySpent: 480000,
-          dailyLimit: 500000,
-        }),
-      );
-      await expect(service.debit('student-uuid', 50000)).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-
-    it('should throw if account is not active', async () => {
-      repo.findOne.mockResolvedValue(
-        createMockAccount({ status: AccountStatus.FROZEN }),
-      );
-      await expect(service.debit('student-uuid', 10000)).rejects.toThrow(
-        BadRequestException,
-      );
-    });
-  });
-
-  describe('resetDailySpent', () => {
-    it('should reset dailySpent to 0 for all accounts', async () => {
-      repo.update.mockResolvedValue({ affected: 5 } as any);
-      await service.resetDailySpent();
-      expect(repo.update).toHaveBeenCalledWith({}, { dailySpent: 0 });
+      const result = await service.toggleFreeze(account.id);
+      expect(manager.findOne).toHaveBeenCalledWith(Account, {
+        where: { id: account.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      expect(result.status).toBe(AccountStatus.FROZEN);
+      expect(result.balance).toBe(75000);
     });
   });
 });

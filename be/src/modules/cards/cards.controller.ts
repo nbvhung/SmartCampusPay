@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { CardsService } from './cards.service';
-import { CardStatus } from './card.entity';
+import { CreateCardDto, UpdateCardStatusDto } from './dto/create-card.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 
@@ -21,7 +21,7 @@ export class CardsController {
   constructor(private readonly service: CardsService) {}
 
   @Post()
-  create(@Body() data: any) {
+  create(@Body() data: CreateCardDto) {
     return this.service.create(data);
   }
 
@@ -41,8 +41,8 @@ export class CardsController {
   }
 
   @Patch(':id/status')
-  updateStatus(@Param('id') id: string, @Body('status') status: CardStatus) {
-    return this.service.updateStatus(id, status);
+  updateStatus(@Param('id') id: string, @Body() dto: UpdateCardStatusDto) {
+    return this.service.updateStatus(id, dto.status);
   }
 
   @Delete(':id')

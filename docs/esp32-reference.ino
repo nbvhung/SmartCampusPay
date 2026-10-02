@@ -123,6 +123,8 @@ State       prevState    = STATE_WIFI_CONNECTING;  // Để detect state change
 
 Preferences prefs;
 String      WIFI_SSID, WIFI_PASS, BASE_URL, API_KEY;
+String pendingPaymentPayload = "";
+int lastHttpCode = -1;
 
 MFRC522              rfid(NFC_SS_PIN, NFC_RST_PIN);
 Adafruit_ILI9341     tft(TFT_CS, TFT_DC, TFT_RST);
@@ -180,7 +182,8 @@ void loadConfig() {
   WIFI_SSID = prefs.getString("wifi_ssid", "");
   WIFI_PASS = prefs.getString("wifi_pass", "");
   BASE_URL  = prefs.getString("base_url",  "https://xxx.onrender.com/api/v1");
-  API_KEY   = prefs.getString("api_key",   "scp_xxxxxxxxxxxxxxxxxxxxxxxx");
+  API_KEY   = prefs.getString("api_key",   "mcp_xxxxxxxxxxxxxxxxxxxxxxxx");
+  pendingPaymentPayload = prefs.getString("pending_pay", "");
   prefs.end();
 }
 
@@ -218,7 +221,14 @@ void handleSerialConfig() {
   Serial.print("1. WiFi SSID: ");   String ssid = readSerialLine(); Serial.println(ssid);
   Serial.print("2. WiFi Pass: ");   String pass = readSerialLine(); Serial.println("******");
   Serial.print("3. Backend URL: ");  String url  = readSerialLine(); Serial.println(url);
-  Serial.print("4. API Key: ");      String key  = readSerialLine(); Serial.println(key);
+  Serial.print("4. API Key: ");      String key  = readSerialLine(); Serial.println("******");
+
+  if (pendingPaymentPayload.length() > 0 && url != BASE_URL) {
+    Serial.println("[CONFIG] Cannot change backend URL with an unresolved payment.");
+    return;
+  }
+  // For a pending request, only repair/rotate the key of the same merchant.
+  // Never move an unresolved payment to another merchant or backend.
   
   if (ssid.length() > 0) {
     saveConfig(ssid, pass, url, key);
@@ -561,6 +571,7 @@ String apiRequest(const String& method, const String& path,
   else if (method == "POST") code = http.POST(body);
 
   String resp = "";
+  lastHttpCode = code;
   if (code > 0) resp = http.getString();
   http.end();
 
@@ -664,26 +675,47 @@ long getBalanceByUid(const String& uid) {
   return doc["data"]["balance"] | -1;
 }
 
-struct PayResult { bool success; String message; long newBalance; };
+struct PayResult { bool success; String message; long newBalance; bool pending; };
+
+bool clearPendingPayment() {
+  prefs.begin("scp", false);
+  bool cleared = prefs.remove("pending_pay");
+  prefs.end();
+  if (cleared) pendingPaymentPayload = "";
+  return cleared;
+}
+
 
 PayResult doPayment(const String& uid, long amount) {
-  StaticJsonDocument<256> body;
-  body["cardUid"]        = uid;
-  body["amount"]         = amount;
-  body["idempotencyKey"] = makeIdempotencyKey();
-
-  String payload;
-  serializeJson(body, payload);
-  String resp = apiRequest("POST", "/transactions/pay/card", payload, 10000);
-
-  PayResult result = {false, "Loi mang", -1};
+  if (pendingPaymentPayload.length() == 0) {
+    StaticJsonDocument<256> body;
+    body["cardUid"] = uid;
+    body["amount"] = amount;
+    body["idempotencyKey"] = makeIdempotencyKey();
+    String payload;
+    serializeJson(body, payload);
+    prefs.begin("scp", false);
+    size_t stored = prefs.putString("pending_pay", payload);
+    prefs.end();
+    if (stored == 0) return {false, "Khong luu duoc giao dich", -1, false};
+    pendingPaymentPayload = payload;
+  }
+  // Replay the persisted payload, including after power loss. Never generate
+  // a new key while an earlier payment has an unknown outcome.
+  String resp = apiRequest("POST", "/transactions/pay/card", pendingPaymentPayload, 10000);
+  PayResult result = {false, "Chua ro ket qua. Dang xac minh", -1, true};
   if (resp.length() == 0) return result;
-
-  StaticJsonDocument<512> doc;
+  StaticJsonDocument<1024> doc;
   if (deserializeJson(doc, resp) != DeserializationError::Ok) return result;
-
-  result.success = doc["success"] | false;
-  result.message = doc["message"] | (result.success ? "Thanh toan thanh cong" : "That bai");
+  result.success = lastHttpCode >= 200 && lastHttpCode < 300 && (doc["success"] | false);
+  String code = doc["code"] | "";
+  bool declined = code == "CARD_INACTIVE" || code == "CARD_NOT_FOUND" || code == "STUDENT_INACTIVE"
+    || code == "ACCOUNT_NOT_FOUND" || code == "ACCOUNT_FROZEN" || code == "INSUFFICIENT_BALANCE"
+    || code == "DAILY_LIMIT_EXCEEDED" || code == "INVALID_CARD_UID" || code == "INVALID_AMOUNT" || code == "VALIDATION_ERROR";
+  if (result.success || declined) {
+    result.message = doc["message"] | (result.success ? "Thanh toan thanh cong" : "Thanh toan bi tu choi");
+    result.pending = !clearPendingPayment();
+  }
   return result;
 }
 
@@ -873,6 +905,25 @@ void setup() {
 // =========================================================================
 
 void loop() {
+  if (pendingPaymentPayload.length() > 0) {
+    esp_task_wdt_reset();
+    handleSerialConfig();
+    if (WiFi.status() != WL_CONNECTED) { connectWifi(10); return; }
+    if (millis() - lastPollAt < 5000) { delay(20); return; }
+    lastPollAt = millis();
+    showProcessing("Dang xac minh giao dich...");
+    PayResult res = doPayment("", 0);
+    if (!res.pending) {
+      resultSuccess = res.success;
+      resultMessage = res.message;
+      enterState(STATE_RESULT);
+      showResult(res.success, res.message.c_str(), -1);
+      resultDisplayedAt = millis();
+      playTrack(res.success ? VOICE_PAY_OK : VOICE_PAY_FAIL);
+    }
+    return;
+  }
+
   esp_task_wdt_reset();        // Feed watchdog mỗi vòng loop
   handleSerialConfig();        // Cho phép config qua Serial
   checkWifiReconnect();        // Tự reconnect WiFi nếu mất
@@ -989,6 +1040,11 @@ void loop() {
 
         PayResult res = doPayment(currentCardUid, amount);
 
+        if (res.pending) {
+          showProcessing("Chua ro ket qua. Xac minh...");
+          lastPollAt = millis();
+          break;
+        }
         resultSuccess = res.success;
         if (res.success) {
           resultMessage = "Thanh toan " + String(AMOUNTS[selectedAmountIdx] / 1000) + "k thanh cong!";

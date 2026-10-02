@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Account, AccountStatus } from './account.entity';
+import { campusDate } from '../../common/utils/payment';
 import { Student } from '../students/student.entity';
 
 @Injectable()
@@ -54,43 +55,32 @@ export class AccountsService {
     return { balance: account.balance };
   }
 
-  async topup(studentId: string, amount: number): Promise<Account> {
-    if (amount <= 0) throw new BadRequestException('Invalid amount');
-    const account = await this.findByStudentId(studentId);
-    if (account.status !== AccountStatus.ACTIVE) {
-      throw new BadRequestException('Account is not active');
-    }
-    account.balance += amount;
-    return this.repo.save(account);
-  }
-
-  async debit(studentId: string, amount: number): Promise<Account> {
-    const account = await this.findByStudentId(studentId);
-    if (account.status !== AccountStatus.ACTIVE) {
-      throw new BadRequestException('Account is not active');
-    }
-    if (account.balance < amount) {
-      throw new BadRequestException('Insufficient balance');
-    }
-    if (account.dailySpent + amount > account.dailyLimit) {
-      throw new BadRequestException('Daily limit exceeded');
-    }
-    account.balance -= amount;
-    account.dailySpent += amount;
-    return this.repo.save(account);
-  }
-
+  // Balance writes belong to TransactionsService/SePayService with a ledger.
   async resetDailySpent(): Promise<void> {
-    await this.repo.update({}, { dailySpent: 0 });
+    await this.repo
+      .createQueryBuilder()
+      .update(Account)
+      .set({ dailySpent: 0, dailySpentDate: campusDate() })
+      .where('"dailySpentDate" IS NULL OR "dailySpentDate" < :today', {
+        today: campusDate(),
+      })
+      .execute();
   }
 
   async toggleFreeze(id: string): Promise<Account> {
-    const account = await this.repo.findOne({ where: { id } });
-    if (!account) throw new NotFoundException('Account not found');
-    account.status =
-      account.status === AccountStatus.ACTIVE
-        ? AccountStatus.FROZEN
-        : AccountStatus.ACTIVE;
-    return this.repo.save(account);
+    return this.repo.manager.transaction(async (manager) => {
+      const account = await manager.findOne(Account, {
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!account) throw new NotFoundException('Account not found');
+      if (account.status === AccountStatus.CLOSED)
+        throw new BadRequestException('Account is closed');
+      account.status =
+        account.status === AccountStatus.ACTIVE
+          ? AccountStatus.FROZEN
+          : AccountStatus.ACTIVE;
+      return manager.save(account);
+    });
   }
 }

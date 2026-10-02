@@ -1,8 +1,12 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import axios from 'axios';
 import { CreditCard, Loader2, CheckCircle, XCircle, Store } from 'lucide-react';
 import { posApi } from '@/lib/pos-api';
 import type { Transaction } from '@/types';
+import { readPendingPayment, preparePayment, finishPayment, type PendingPayment } from '@/lib/pos-payment';
+
+const TERMINAL_CODES = new Set(['CARD_INACTIVE', 'CARD_NOT_FOUND', 'STUDENT_INACTIVE', 'ACCOUNT_NOT_FOUND', 'ACCOUNT_FROZEN', 'INSUFFICIENT_BALANCE', 'DAILY_LIMIT_EXCEEDED', 'INVALID_CARD_UID', 'INVALID_AMOUNT', 'VALIDATION_ERROR']);
 
 export default function PosPage() {
   const [apiKey, setApiKey] = useState('');
@@ -10,20 +14,84 @@ export default function PosPage() {
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(false);
   const [paid, setPaid] = useState(false);
+  const [pending, setPending] = useState<PendingPayment | null>(null);
+  const [ready, setReady] = useState(false);
+  const sending = useRef(false);
   const [result, setResult] = useState<{ ok: boolean; tx?: Transaction; error?: string } | null>(null);
 
+  useEffect(() => {
+    let active = true;
+    // Restore before enabling payment; never overwrite an unresolved key.
+    queueMicrotask(() => {
+      if (!active) return;
+      try {
+        const saved = readPendingPayment(localStorage);
+        if (saved) {
+          setPending(saved);
+          setUid(saved.cardUid);
+          setAmount(String(saved.amount));
+          setResult({ ok: false, error: 'Có giao dịch chưa rõ kết quả. Nhập lại API key của thiết bị và xác minh bằng nút bên dưới.' });
+        }
+        setReady(true);
+      } catch {
+        setResult({ ok: false, error: 'Không thể khôi phục/lưu giao dịch. Cần kiểm tra dữ liệu trình duyệt trước khi thanh toán.' });
+      }
+    });
+    return () => { active = false; };
+  }, []);
+
   async function handlePay() {
-    if (paid || !apiKey.trim() || !uid.trim() || !amount) return;
+    if (sending.current) return;
+    // Serialize POS tabs sharing this browser's pending transaction.
+    if (!navigator.locks) {
+      setResult({ ok: false, error: 'Trình duyệt cần hỗ trợ Web Locks qua HTTPS hoặc localhost.' });
+      return;
+    }
+    sending.current = true;
+    try {
+      await navigator.locks.request('smartcampuspay.pos-payment', { ifAvailable: true }, lock => {
+        if (!lock) {
+          setResult({ ok: false, error: 'Một tab POS khác đang xử lý giao dịch. Chờ kết quả trước khi thử lại.' });
+          return;
+        }
+        return sendPayment();
+      });
+    } finally {
+      sending.current = false;
+    }
+  }
+
+  async function sendPayment() {
+    if (!ready || paid || !apiKey.trim() || !uid.trim() || !amount) return;
+    if (!Number.isSafeInteger(Number(amount)) || Number(amount) < 100 || Number(amount) > 10000000) {
+      setResult({ ok: false, error: 'Nhập số tiền nguyên từ 100 đến 10.000.000 đồng.' });
+      return;
+    }
     setLoading(true);
     setResult(null);
+    let request: PendingPayment | null = null;
     try {
-      const res = await posApi.payByCard(apiKey.trim(), uid.trim(), Number(amount));
+      request = await preparePayment(localStorage, apiKey, uid, Number(amount));
+      setPending(request);
+      setUid(request.cardUid);
+      setAmount(String(request.amount));
+      const res = await posApi.payByCard(apiKey.trim(), request.cardUid, request.amount, request.idempotencyKey);
+      finishPayment(localStorage, request.idempotencyKey);
+      setPending(null);
       setResult({ ok: true, tx: res.data.data });
       setPaid(true);
-    } catch (err: any) {
-      setResult({ ok: false, error: err?.response?.data?.message || 'Lỗi kết nối' });
+    } catch (err: unknown) {
+      const detail = axios.isAxiosError<{ code?: string; message?: string }>(err) ? err.response?.data : undefined;
+      if (request && detail?.code && TERMINAL_CODES.has(detail.code)) {
+        finishPayment(localStorage, request.idempotencyKey);
+        setPending(null);
+        setResult({ ok: false, error: detail.message || 'Thanh toán bị từ chối' });
+      } else {
+        setResult({ ok: false, error: 'Chưa xác định kết quả. Giữ nguyên giao dịch và thử xác minh lại. ' + (detail?.message || (err instanceof Error && !axios.isAxiosError(err) ? err.message : '')) });
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   function handleReset() {
@@ -50,7 +118,7 @@ export default function PosPage() {
             <input
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              disabled={paid}
+              disabled={paid || loading}
               className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm font-mono focus:outline-none focus:ring-2 focus:ring-red-400 disabled:bg-gray-100"
             />
           </div>
@@ -60,7 +128,7 @@ export default function PosPage() {
             <input
               value={uid}
               onChange={(e) => setUid(e.target.value)}
-              disabled={paid}
+              disabled={paid || loading || !!pending}
               className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-400 disabled:bg-gray-100"
             />
           </div>
@@ -72,20 +140,20 @@ export default function PosPage() {
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
               min={1000}
-              disabled={paid}
+              disabled={paid || loading || !!pending}
               className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-400 disabled:bg-gray-100"
             />
           </div>
 
           <button
             onClick={handlePay}
-            disabled={loading || paid || !apiKey.trim() || !uid.trim() || !amount}
+            disabled={!ready || loading || paid || !apiKey.trim() || !uid.trim() || !amount}
             className="w-full py-3 bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
           >
             {loading ? (
               <><Loader2 className="animate-spin w-5 h-5" />Đang xử lý...</>
             ) : (
-              <><CreditCard className="w-5 h-5" />Thanh toán</>
+              <><CreditCard className="w-5 h-5" />{pending ? 'Xác minh lại giao dịch' : 'Thanh toán'}</>
             )}
           </button>
 
@@ -94,7 +162,7 @@ export default function PosPage() {
               <div className="flex items-center gap-2 mb-2">
                 {result.ok ? <CheckCircle className="w-5 h-5 text-green-600" /> : <XCircle className="w-5 h-5 text-red-600" />}
                 <span className={`font-semibold ${result.ok ? 'text-green-700' : 'text-red-700'}`}>
-                  {result.ok ? 'Thanh toán thành công' : 'Thanh toán thất bại'}
+                  {result.ok ? 'Thanh toán thành công' : pending ? 'Chưa xác định kết quả' : 'Thanh toán bị từ chối'}
                 </span>
               </div>
               {result.ok && result.tx && (

@@ -12,7 +12,7 @@ const PROTECTED_STUDENT = ['/student'];
 const PROTECTED_ADMIN = ['/admin'];
 const AUTH_ROUTES = ['/login', '/change-password'];
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const accessToken = request.cookies.get('access_token')?.value;
 

@@ -8,9 +8,11 @@ import {
   HttpCode,
   HttpStatus,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { SePayService } from './sepay.service';
+import { CreatePaymentDto, CancelPaymentDto } from './dto/payment.dto';
 import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
@@ -29,12 +31,9 @@ export class SePayController {
   @Post('create-payment')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
-  async createPayment(
-    @Body() dto: { amount: number },
-    @CurrentUser() user: any,
-  ) {
+  async createPayment(@Body() dto: CreatePaymentDto, @CurrentUser() user: any) {
     if (user.role !== 'student') {
-      return { success: false, message: 'Chỉ sinh viên mới được nạp tiền' };
+      throw new ForbiddenException('Chỉ sinh viên mới được nạp tiền');
     }
     return this.service.createPayment(user.studentCode, dto.amount);
   }
@@ -51,7 +50,7 @@ export class SePayController {
   @HttpCode(HttpStatus.OK)
   getPersonalStaticQr(@CurrentUser() user: any) {
     if (user.role !== 'student') {
-      return { success: false, message: 'Chỉ sinh viên được lấy QR cá nhân' };
+      throw new ForbiddenException('Chỉ sinh viên được lấy QR cá nhân');
     }
     return this.service.createPersonalStaticQr(user.studentCode);
   }
@@ -59,10 +58,7 @@ export class SePayController {
   @Post('cancel-payment')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
-  async cancelPayment(
-    @Body() dto: { referenceCode: string },
-    @CurrentUser() user: any,
-  ) {
+  async cancelPayment(@Body() dto: CancelPaymentDto, @CurrentUser() user: any) {
     await this.service.cancelPayment(dto.referenceCode, user.id);
     return { message: 'Đã hủy giao dịch' };
   }

@@ -1,6 +1,6 @@
 # Tài liệu API cho thiết bị phần cứng (POS/NFC)
 
-Phiên bản: 1.0 · Dành cho bên phát triển firmware ESP32/ESP32-S3.
+Phiên bản: 1.1 · Dành cho bên phát triển firmware ESP32/ESP32-S3.
 
 > Tài liệu này là **API contract** giữa thiết bị phần cứng và backend.
 > Bên phần cứng viết firmware gọi các endpoint dưới đây qua **HTTPS**.
@@ -8,39 +8,45 @@ Phiên bản: 1.0 · Dành cho bên phát triển firmware ESP32/ESP32-S3.
 
 ## 1. Thông tin chung
 
-| Mục | Giá trị |
-|---|---|
-| Base URL (dev) | `http://localhost:4000/api/v1` |
-| Base URL (prod/demo) | `https://<public-url>/api/v1` |
-| Auth thiết bị | Header `X-API-Key: <merchant_api_key>` |
-| Format | JSON, UTF-8 |
-| Response chuẩn | `{ "success": true, "data": T, "timestamp": "..." }` |
-| Rate limit | 100 request/phút/IP |
+| Mục                  | Giá trị                                              |
+| -------------------- | ---------------------------------------------------- |
+| Base URL (dev)       | `http://localhost:4000/api/v1`                       |
+| Base URL (prod/demo) | `https://<public-url>/api/v1`                        |
+| Auth thiết bị        | Header `X-API-Key: <merchant_api_key>`               |
+| Format               | JSON, UTF-8                                          |
+| Response chuẩn       | `{ "success": true, "data": T, "timestamp": "..." }` |
+| Rate limit           | 100 request/phút/endpoint/IP                         |
 
 Mọi request từ thiết bị **bắt buộc** kèm header:
 
 ```
-X-API-Key: scp_xxxxxxxxxxxxxxxx
+X-API-Key: mcp_xxxxxxxxxxxxxxxx
 ```
 
-API key được tạo khi admin tạo merchant (`POST /api/v1/merchants`). Cấp riêng 1 key cho **mỗi thiết bị** để dễ thu hồi khi mất cắp.
+API key được tạo khi admin tạo merchant (`POST /api/v1/merchants`), lấy trường `data.rawApiKey`. Hiện một merchant có một key; demo cấp một merchant cho một thiết bị. Key chỉ hiển thị khi tạo/rotate, database lưu hash.
 
 ## 2. Quy tắc idempotency (chống thanh toán trùng)
 
 - Mọi request **thanh toán** phải kèm `idempotencyKey` là **UUID** sinh ngay tại thiết bị, giữ nguyên khi **retry** cùng 1 giao dịch.
 - Nếu gửi lại cùng key, backend trả về giao dịch cũ (không trừ tiền lần 2).
-- Với **nạp tiền**, backend tự chống trùng theo `transferId` của ngân hàng — thiết bị không cần làm gì thêm.
+- Với **nạp tiền**, backend ghi mọi khoản tiền vào một inbox unique theo `transferId`; xử lý tự động và thủ công khóa cùng bản ghi. Chuyển thêm vào QR đã dùng, sai tiền, bị hủy hoặc hết hạn sẽ vào hàng đợi đối soát.
+- UUID phải là **v4**. Sinh một lần khi xác nhận số tiền; lưu nguyên payload vào NVS **trước khi gửi**. Giữ nguyên key/payload qua timeout và reboot, xác minh xong mới nhận giao dịch mới.
+- Timeout/429/5xx/`PAYMENT_IN_PROGRESS` là **chưa rõ kết quả**. Retry cùng key với backoff tối thiểu 2–5 giây; không báo thất bại rồi tạo key mới.
+- `GET /transactions/payments/:key` trả giao dịch đã commit, chỉ cho merchant sở hữu key. 404 chưa chứng minh thất bại: tiếp tục replay request gốc với cùng key.
+- Replay thanh toán mới đã lưu UID vẫn trả transaction cũ khi thẻ bị khóa sau thanh toán. Giao dịch trước phiên bản 1.1 chưa lưu UID phải dùng endpoint tra cứu kết quả.
 
 ## 3. Danh sách endpoint
 
-| # | Method | Đường dẫn | Mục đích |
-|---|---|---|---|
-| 1 | `POST` | `/transactions/pay` | Thanh toán bằng mã SV (phòng hờ) |
-| 2 | `POST` | `/transactions/pay/card` | **Thanh toán bằng thẻ NFC** (chính) |
-| 3 | `GET` | `/hardware/students/by-uid/:uid` | Quẹt thẻ → lấy tên SV để chào |
-| 4 | `POST` | `/hardware/topup/qr` | Nạp tiền: tạo QR động cho 1 SV |
-| 5 | `GET` | `/hardware/topup/status/:refCode` | Nạp tiền: hỏi kết quả (polling) |
-| 6 | `GET` | `/hardware/static-qr` | Nạp tiền: lấy QR tĩnh chung |
+| #   | Method | Đường dẫn                         | Mục đích                            |
+| --- | ------ | --------------------------------- | ----------------------------------- |
+| 1   | `POST` | `/transactions/pay`               | Thanh toán bằng mã SV (phòng hờ)    |
+| 2   | `POST` | `/transactions/pay/card`          | **Thanh toán bằng thẻ NFC** (chính) |
+| 3   | `GET`  | `/hardware/students/by-uid/:uid`  | Quẹt thẻ → lấy tên SV để chào       |
+| 4   | `POST` | `/hardware/topup/qr`              | Nạp tiền: tạo QR động cho 1 SV      |
+| 5   | `GET`  | `/hardware/topup/status/:refCode` | Nạp tiền: hỏi kết quả (polling)     |
+| 6   | `GET`  | `/hardware/static-qr`             | Nạp tiền: lấy QR tĩnh chung         |
+| 7   | `GET`  | `/hardware/balance/:uid`          | Số dư server, xác thực API key      |
+| 8   | `GET`  | `/transactions/payments/:key`     | Xác minh kết quả, scope merchant    |
 
 ---
 
@@ -51,9 +57,8 @@ API key được tạo khi admin tạo merchant (`POST /api/v1/merchants`). Cấ
 ```json
 {
   "studentCode": "20210012",
-  "merchantId": "9f0f6c21-...",
   "amount": 25000,
-  "idempotencyKey": "3c9b1e2a-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  "idempotencyKey": "3c9b1e2a-aaaa-4bbb-8ccc-dddddddddddd"
 }
 ```
 
@@ -62,17 +67,19 @@ Thiết bị **thông thường dùng endpoint 4.2** (quét thẻ). Endpoint nà
 ### 4.2. POST `/transactions/pay/card` — Thanh toán bằng thẻ NFC (chính)
 
 **Request:**
+
 ```json
 {
   "cardUid": "A1B2C3D4",
   "amount": 25000,
-  "idempotencyKey": "3c9b1e2a-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  "idempotencyKey": "3c9b1e2a-aaaa-4bbb-8ccc-dddddddddddd"
 }
 ```
 
-`cardUid` = UID đọc từ chip NFC (chuỗi hex, viết hoa/không dấu cách).
+`cardUid` = UID đọc từ chip NFC, hex viết hoa và giữ số 0 đầu. Backend chuẩn hóa dấu cách/`:`/`-`; hex phải gồm 2–10 byte. Các mã `MOCK-*` được giữ để thử nghiệm. `amount` là số nguyên VND từ 100 đến 10.000.000.
 
 **Response thành công (HTTP 200):**
+
 ```json
 {
   "success": true,
@@ -93,28 +100,37 @@ Thiết bị **thông thường dùng endpoint 4.2** (quét thẻ). Endpoint nà
 ```
 
 **Lỗi thanh toán (HTTP 400)** — ví dụ:
+
 ```json
-{ "success": false, "data": null, "timestamp": "...", "message": "Insufficient balance" }
+{
+  "success": false,
+  "data": null,
+  "code": "INSUFFICIENT_BALANCE",
+  "timestamp": "...",
+  "message": "Insufficient balance"
+}
 ```
 
 Danh sách lỗi:
-| message | Ý nghĩa | Hành động thiết bị |
-|---|---|---|
-| `Card is not active` | Thẻ bị khóa/mất | Voice "Thẻ không hoạt động" |
-| `Insufficient balance` | Không đủ số dư | Voice "Không đủ số dư" |
-| `Daily limit exceeded` | Vượt hạn mức ngày | Voice "Vượt hạn mức ngày" |
-| `Invalid student` | SV bị khóa | Voice "Sinh viên bị khóa" |
-| `Account is frozen` | Ví bị đóng băng | Voice "Ví bị đóng băng" |
+
+| message                | Ý nghĩa           | Hành động thiết bị          |
+| ---------------------- | ----------------- | --------------------------- |
+| `Card is not active`   | Thẻ bị khóa/mất   | Voice "Thẻ không hoạt động" |
+| `Insufficient balance` | Không đủ số dư    | Voice "Không đủ số dư"      |
+| `Daily limit exceeded` | Vượt hạn mức ngày | Voice "Vượt hạn mức ngày"   |
+| `Invalid student`      | SV bị khóa        | Voice "Sinh viên bị khóa"   |
+| `Account is frozen`    | Ví bị đóng băng   | Voice "Ví bị đóng băng"     |
 
 > Sau khi nhận response, thiết bị hiển thị + đọc giọng nói:
 > "Thanh toán thành công, số dư X đồng" — hoặc thông báo lỗi tương ứng.
-> Có thể lấy số dư mới qua `GET /accounts/balance/:studentId` (JWT) hoặc tự tính.
+> Lấy số dư server qua `GET /hardware/balance/:uid` với API key; không tự tính khi kết quả còn chưa rõ.
 
 ### 4.3. GET `/hardware/students/by-uid/:uid` — Tra cứu SV theo thẻ
 
 Quẹt thẻ → gọi endpoint này → hiện "Xin chào, Nguyễn Văn A".
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -128,15 +144,19 @@ Quẹt thẻ → gọi endpoint này → hiện "Xin chào, Nguyễn Văn A".
 Flow: SV quẹt thẻ trên thiết bị → thiết bị tạo QR riêng (chứa refCode) → SV quét bằng app ngân hàng → chuyển tiền → backend tự cộng vào đúng ví của SV.
 
 **Request** (2 cách, ưu tiên `cardUid`):
+
 ```json
 { "cardUid": "A1B2C3D4" }
 ```
+
 hoặc
+
 ```json
 { "studentCode": "20210012" }
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -151,6 +171,7 @@ hoặc
 ```
 
 Ghi chú:
+
 - `amount = 0` nghĩa là **QR không gắn số tiền cố định** — SV tự nhập số tiền khi chuyển.
 - Hiển thị `qrUrl` lên màn hình (render QR bằng thư viện `qrcodegen`).
 - Sau khi SV chuyển khoản, thiết bị **poll** endpoint 4.5 đến khi `status = success` hoặc hết hạn.
@@ -159,7 +180,10 @@ Ghi chú:
 
 Thiết bị gọi mỗi **3–5 giây** sau khi SV chuyển khoản.
 
+Chỉ merchant đã tạo QR được hỏi trạng thái QR đó. Hạn QR được lưu trên server; hết hạn chuyển thành `failed`. Tiền đến sau hủy/hết hạn vẫn được ghi nhận vào hàng đợi để admin đối soát.
+
 **Response khi thành công:**
+
 ```json
 {
   "success": true,
@@ -187,6 +211,7 @@ QR chung của trường (số tài khoản cố định), hiện sẵn trên m�
 SV quét → **phải ghi mã SV vào nội dung chuyển khoản** → backend tự khớp mã SV để cộng tiền.
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -205,6 +230,7 @@ SV quét → **phải ghi mã SV vào nội dung chuyển khoản** → backend 
 ## 5. Luồng nghiệp vụ (tổng hợp cho firmware)
 
 ### 5.1. Thanh toán tại merchant
+
 ```
 1. Idle: màn hình hiện QR tĩnh + "Quẹt thẻ thanh toán"
 2. SV quẹt thẻ NFC → đọc UID
@@ -215,6 +241,7 @@ SV quét → **phải ghi mã SV vào nội dung chuyển khoản** → backend 
 ```
 
 ### 5.2. Nạp tiền — QR động (đề xuất)
+
 ```
 1. Màn hình: "Nạp tiền — quẹt thẻ"
 2. SV quẹt thẻ → POST /hardware/topup/qr { cardUid }
@@ -225,6 +252,7 @@ SV quét → **phải ghi mã SV vào nội dung chuyển khoản** → backend 
 ```
 
 ### 5.3. Nạp tiền — QR tĩnh (theo yêu cầu hội đồng)
+
 ```
 1. Màn hình hiện QR tĩnh (hoặc in giấy) + hướng dẫn "Nhớ ghi MÃ SINH VIÊN"
 2. SV quét, chuyển khoản kèm mã SV
@@ -237,13 +265,18 @@ SV quét → **phải ghi mã SV vào nội dung chuyển khoản** → backend 
 
 ## 6. Mã lỗi chuẩn
 
-| HTTP | Ý nghĩa | Ghi chú cho thiết bị |
-|---|---|---|
-| 400 | Dữ liệu không hợp lệ / nghiệp vụ lỗi | Đọc `message`, phát voice tương ứng |
-| 401 | Thiếu/sai `X-API-Key` | Kiểm tra cấu hình key |
-| 404 | Không tìm thấy tài nguyên | Ví dụ: thẻ chưa đăng ký |
-| 429 | Vượt rate limit | Chờ rồi retry |
-| 5xx | Lỗi hệ thống | Retry với cùng `idempotencyKey` |
+| HTTP | Ý nghĩa                              | Ghi chú cho thiết bị                |
+| ---- | ------------------------------------ | ----------------------------------- |
+| 400  | Dữ liệu không hợp lệ / nghiệp vụ lỗi | Đọc `message`, phát voice tương ứng |
+| 401  | Thiếu/sai `X-API-Key`                | Kiểm tra cấu hình key               |
+| 404  | Không tìm thấy tài nguyên            | Ví dụ: thẻ chưa đăng ký             |
+| 409  | Key đã được dùng với payload khác   | Dừng gửi payload mới, xác minh key gốc |
+| 429  | Vượt rate limit                      | Chờ rồi retry                       |
+| 5xx  | Lỗi hệ thống                         | Retry với cùng `idempotencyKey`     |
+
+Response lỗi luôn có `success: false`, `data: null`, `code`, `message`, `statusCode`, `timestamp`. Validation có thể trả mảng `message`; firmware ưu tiên `code`.
+
+Các mã nghiệp vụ: `CARD_INACTIVE`, `CARD_NOT_FOUND`, `STUDENT_INACTIVE`, `ACCOUNT_NOT_FOUND`, `ACCOUNT_FROZEN`, `INSUFFICIENT_BALANCE`, `DAILY_LIMIT_EXCEEDED`, `INVALID_CARD_UID`, `INVALID_AMOUNT`, `VALIDATION_ERROR`, `IDEMPOTENCY_CONFLICT`, `PAYMENT_IN_PROGRESS`, `PAYMENT_NOT_FOUND`. Chỉ lỗi từ chối nghiệp vụ 400/404 mới kết thúc request; 401 cần sửa key, 429/5xx giữ request để retry. Không phát success dựa vào kết nối WiFi hoặc HTTP request đã được gửi.
 
 ## 7. Ghi chú kết nối demo
 

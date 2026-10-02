@@ -20,7 +20,8 @@ export class ApiKeyGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const apiKey = request.headers['x-api-key'];
 
-    if (!apiKey) throw new UnauthorizedException('Missing API key');
+    if (typeof apiKey !== 'string' || apiKey.length > 256 || !apiKey)
+      throw new UnauthorizedException('Missing or invalid API key');
 
     const merchants = await this.merchantRepo.find({
       select: { id: true, apiKey: true, isActive: true },

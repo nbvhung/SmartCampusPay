@@ -64,27 +64,34 @@ export class HardwareDeviceService {
     };
   }
 
-  async createTopupQr(body: TopupQrDto): Promise<{
+  async createTopupQr(
+    body: TopupQrDto,
+    merchantId: string,
+  ): Promise<{
     referenceCode: string;
     qrUrl: string;
     amount: number;
     expiresAt: string;
   }> {
     const studentCode = await this.resolveStudentCode(body);
-    return this.sepayService.createDevicePayment(studentCode);
+    return this.sepayService.createDevicePayment(studentCode, merchantId);
   }
 
-  async getTopupStatus(refCode: string): Promise<{
+  async getTopupStatus(
+    refCode: string,
+    merchantId: string,
+  ): Promise<{
     status: string;
     amount: number;
     balance: number | null;
     studentCode: string;
   }> {
-    const tx = await this.txRepo.findOne({
-      where: { referenceCode: refCode },
+    let tx = await this.txRepo.findOne({
+      where: { referenceCode: refCode, merchantId },
     });
     if (!tx) throw new NotFoundException('Không tìm thấy giao dịch nạp tiền');
 
+    tx = await this.sepayService.expirePayment(tx);
     const account = await this.accountRepo.findOne({
       where: { studentId: tx.studentId },
     });
@@ -102,6 +109,10 @@ export class HardwareDeviceService {
   }
 
   private async resolveStudentCode(body: TopupQrDto): Promise<string> {
+    if (body.cardUid && body.studentCode)
+      throw new BadRequestException(
+        'Provide either cardUid or studentCode, not both',
+      );
     if (body.studentCode) {
       const student = await this.studentsService.findByCode(body.studentCode);
       if (!student || !student.isActive) {

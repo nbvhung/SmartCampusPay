@@ -5,7 +5,7 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, Raw } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import * as ExcelJS from 'exceljs';
 import { Student } from './student.entity';
@@ -127,7 +127,11 @@ export class StudentsService {
 
   async findByCode(code: string): Promise<Student | null> {
     return this.repo.findOne({
-      where: { studentCode: code },
+      where: {
+        studentCode: Raw((alias) => `UPPER(TRIM(${alias})) = :studentCode`, {
+          studentCode: code.trim().toUpperCase(),
+        }),
+      },
       relations: { cards: true, accounts: true },
     });
   }

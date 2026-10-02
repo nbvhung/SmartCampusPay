@@ -18,11 +18,18 @@ import { Student } from '../students/student.entity';
 import { AccountsService } from '../accounts/accounts.service';
 import { StudentsService } from '../students/students.service';
 import { TopupPendingService } from '../topup-pending/topup-pending.service';
+import {
+  TopupPending,
+  TopupPendingStatus,
+} from '../topup-pending/topup-pending.entity';
+import { validateTopupAmount } from '../../common/utils/payment';
+import { randomBytes } from 'crypto';
 import { RedisService } from '../redis/redis.service';
 
 interface SePayWebhookDto {
-  id: number;
+  id: string;
   amount: number;
+  accountNumber?: string;
   content: string;
   transferType: string;
   sender: string;
@@ -37,6 +44,7 @@ export class SePayService {
   private readonly bankId: string;
   private readonly bankName: string;
   private readonly accountNumber: string;
+  private readonly webhookAccountNumber: string;
   private readonly sepayQrBase: string;
   private readonly staticQrDescription: string;
 
@@ -54,6 +62,9 @@ export class SePayService {
     this.bankId = this.config.get('SEPAY_BANK_ID', '');
     this.bankName = this.config.get('SEPAY_BANK_NAME', '');
     this.accountNumber = this.config.get('SEPAY_ACCOUNT_NUMBER', '');
+    this.webhookAccountNumber =
+      this.config.get<string>('SEPAY_WEBHOOK_ACCOUNT_NUMBER')?.trim() ||
+      this.accountNumber;
     this.sepayQrBase = this.config.get(
       'SEPAY_QR_BASE',
       'https://qr.sepay.vn/img',
@@ -66,8 +77,10 @@ export class SePayService {
 
   verifyApiKey(authHeader: string | undefined): void {
     if (!this.apiKey) {
-      this.logger.warn('SEPAY_API_KEY chưa được cấu hình');
-      return;
+      this.logger.error('SEPAY_API_KEY chưa được cấu hình');
+      throw new UnauthorizedException(
+        'Webhook authentication is not configured',
+      );
     }
     const expected = `Apikey ${this.apiKey}`;
     if (!authHeader || authHeader !== expected) {
@@ -76,7 +89,7 @@ export class SePayService {
   }
 
   generateRefCode(studentCode: string): string {
-    const rand = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const rand = randomBytes(3).toString('hex').toUpperCase();
     return `SCP${studentCode}${rand}`;
   }
 
@@ -143,9 +156,8 @@ export class SePayService {
   }> {
     const student = await this.studentsService.findByCode(studentCode);
     if (!student) throw new BadRequestException('Sinh viên không tồn tại');
-    if (amount < 1000 || amount > 5000000) {
-      throw new BadRequestException('Số tiền từ 1.000đ đến 5.000.000đ');
-    }
+    validateTopupAmount(amount);
+    if (!student.isActive) throw new BadRequestException('Sinh viên bị khóa');
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
 
     const refCode = this.generateRefCode(studentCode);
@@ -157,6 +169,7 @@ export class SePayService {
       status: TransactionStatus.PENDING,
       idempotencyKey: `sepay_${refCode}`,
       referenceCode: refCode,
+      expiresAt,
       description: `Nạp tiền qua SePay - ${refCode}`,
       studentCode: student.studentCode,
       studentId: student.id,
@@ -171,7 +184,10 @@ export class SePayService {
     };
   }
 
-  async createDevicePayment(studentCode: string): Promise<{
+  async createDevicePayment(
+    studentCode: string,
+    merchantId: string,
+  ): Promise<{
     referenceCode: string;
     qrUrl: string;
     amount: number;
@@ -192,7 +208,9 @@ export class SePayService {
       status: TransactionStatus.PENDING,
       idempotencyKey: `sepay_${refCode}`,
       referenceCode: refCode,
+      expiresAt,
       description: `Nạp tiền qua thiết bị - ${refCode}`,
+      merchantId,
       studentCode: student.studentCode,
       studentId: student.id,
       accountId: (await this.accountsService.findByStudentId(student.id)).id,
@@ -206,109 +224,166 @@ export class SePayService {
     };
   }
 
-  async handleWebhook(body: any): Promise<{ message: string }> {
-    this.logger.log(`====== SEPAY WEBHOOK RAW ======`);
-    this.logger.log(JSON.stringify(body, null, 2));
-    this.logger.log(`===============================`);
-
+  async handleWebhook(body: unknown): Promise<{ message: string }> {
     const dto = this.parseWebhook(body);
-    this.logger.log(
-      `SePay webhook parsed: id=${dto.id}, amount=${dto.amount}, content="${dto.content}", transferType="${dto.transferType}", sender="${dto.sender}"`,
-    );
-
-    if (dto.transferType !== 'in') {
-      this.logger.warn(
-        `Bỏ qua giao dịch không phải tiền vào: ${dto.transferType}`,
-      );
-      return { message: 'ignored' };
-    }
-
-    const transferId = dto.id ? String(dto.id) : null;
-    if (!transferId) {
-      this.logger.warn(
-        `Thiếu transferId, không thể xử lý tự động: "${dto.content}"`,
-      );
-      return { message: 'missing_transfer_id' };
-    }
-
-    const lockKey = `sepay_webhook:${transferId}`;
-    const acquired = await this.redis.acquireLock(lockKey, 30);
-    if (!acquired) {
-      this.logger.warn(
-        `Webhook đang được xử lý bởi request khác: ${transferId}`,
-      );
-      return { message: 'processing' };
-    }
-
-    try {
-      const idemKey = `sepay_${transferId}`;
-
-      const existingByKey = await this.txRepo.findOne({
+    if (dto.transferType !== 'in') return { message: 'ignored' };
+    // Persist every incoming transfer first. All automatic/manual processing locks
+    // this same unique inbox row, even when Redis is unavailable.
+    const inbox = await this.topupPendingService.createFromWebhook({
+      transferId: dto.id,
+      amount: dto.amount,
+      content: dto.content,
+      sender: dto.sender,
+      bankRef: dto.bankRef,
+      bankName: dto.bankName,
+    });
+    const refCode = this.parseRefCode(dto.content);
+    const student = refCode
+      ? null
+      : await this.matchStudentByContent(dto.content);
+    return this.dataSource.transaction(async (manager) => {
+      const pending = await manager.findOneOrFail(TopupPending, {
+        where: { id: inbox.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      // Replays must never change the recorded destination, amount or content.
+      if (pending.amount !== dto.amount || pending.content !== dto.content) {
+        throw new BadRequestException({
+          code: 'TRANSFER_CONFLICT',
+          message: 'Transfer ID payload mismatch',
+        });
+      }
+      if (pending.status !== TopupPendingStatus.PENDING)
+        return { message: 'already_processed' };
+      // Leave an already queued transfer for an explicit admin decision.
+      if (pending.note) return { message: 'pending_match' };
+      const queue = async (reason: string): Promise<{ message: string }> => {
+        pending.note = reason;
+        await manager.save(pending);
+        return { message: 'pending_match' };
+      };
+      const idemKey = `sepay_${dto.id}`;
+      const previous = await manager.findOne(Transaction, {
         where: { idempotencyKey: idemKey },
       });
-      if (existingByKey) {
-        this.logger.log(`Giao dịch đã được xử lý trước đó: ${idemKey}`);
-        return {
-          message:
-            existingByKey.status === TransactionStatus.SUCCESS
-              ? 'already_processed'
-              : 'processing',
-        };
+      if (previous) {
+        pending.status = TopupPendingStatus.MATCHED;
+        pending.studentId = previous.studentId;
+        pending.transactionId = previous.id;
+        pending.matchedAt = new Date();
+        await manager.save(pending);
+        return { message: 'already_processed' };
       }
-
-      const result = await this.tryMatchByRefCode(dto);
-      this.logger.debug(`tryMatchByRefCode result: ${JSON.stringify(result)}`);
-      if (result) return result;
-
-      const resultByStudent = await this.tryMatchByStudentCode(
-        dto,
-        idemKey,
-        transferId,
-      );
-      this.logger.debug(
-        `tryMatchByStudentCode result: ${JSON.stringify(resultByStudent)}`,
-      );
-      if (resultByStudent) return resultByStudent;
-
-      this.logger.warn(
-        `Không khớp refCode/mã SV, đưa vào hàng đợi: "${dto.content}"`,
-      );
-      this.logger.log(
-        `[DEBUG] Tạo pending với transferId=${transferId}, amount=${dto.amount}`,
-      );
-      const createdPending = await this.topupPendingService.createFromWebhook({
-        transferId,
-        amount: dto.amount,
-        content: dto.content,
-        sender: dto.sender,
-        bankRef: dto.bankRef,
-        bankName: dto.bankName,
+      if (
+        dto.accountNumber &&
+        this.webhookAccountNumber &&
+        dto.accountNumber !== this.webhookAccountNumber
+      ) {
+        return queue('recipient_account_mismatch');
+      }
+      if (
+        !Number.isSafeInteger(dto.amount) ||
+        dto.amount < 1000 ||
+        dto.amount > 5000000
+      ) {
+        return queue('amount_out_of_range');
+      }
+      let tx: Transaction | null = null;
+      let target: Student | null = student;
+      if (refCode) {
+        tx = await manager.findOne(Transaction, {
+          where: { referenceCode: refCode },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!tx) return queue('reference_not_found');
+        if (tx.status !== TransactionStatus.PENDING)
+          return queue('reference_already_used_or_cancelled');
+        const expiresAt =
+          tx.expiresAt ?? new Date(tx.createdAt.getTime() + 30 * 60 * 1000);
+        if (expiresAt.getTime() <= Date.now()) {
+          tx.status = TransactionStatus.FAILED;
+          await manager.save(tx);
+          return queue('reference_expired');
+        }
+        if (tx.amount !== 0 && tx.amount !== dto.amount)
+          return queue('amount_mismatch');
+        target = await manager.findOne(Student, {
+          where: { id: tx.studentId },
+          lock: { mode: 'pessimistic_read' },
+        });
+      }
+      if (!refCode && target) {
+        target = await manager.findOne(Student, {
+          where: { id: target.id },
+          lock: { mode: 'pessimistic_read' },
+        });
+      }
+      if (!target || !target.isActive)
+        return queue('student_not_found_or_inactive');
+      const account = await manager.findOne(Account, {
+        where: { studentId: target.id },
+        lock: { mode: 'pessimistic_write' },
       });
-      this.logger.log(
-        `[DEBUG] Pending tạo thành công: id=${createdPending.id}, status=${createdPending.status}`,
-      );
-      return { message: 'pending_match' };
-    } catch (error) {
-      this.logger.error(
-        `[handleWebhook] Exception: ${error instanceof Error ? error.message : String(error)}`,
-        error instanceof Error ? error.stack : '',
-      );
-      throw error;
-    } finally {
-      await this.redis.releaseLock(lockKey);
-    }
+      if (!account || account.status !== AccountStatus.ACTIVE)
+        return queue('account_not_active');
+      if (account.balance + dto.amount > 2147483647)
+        return queue('balance_overflow');
+      account.balance += dto.amount;
+      await manager.save(account);
+      tx =
+        tx ??
+        manager.create(Transaction, {
+          studentId: target.id,
+          studentCode: target.studentCode,
+          accountId: account.id,
+        });
+      tx.type = TransactionType.CREDIT;
+      tx.status = TransactionStatus.SUCCESS;
+      tx.amount = dto.amount;
+      tx.idempotencyKey = idemKey;
+      tx.description = `Nạp tiền qua ngân hàng - ${dto.content}`.slice(0, 255);
+      const saved = await manager.save(tx);
+      pending.status = TopupPendingStatus.MATCHED;
+      pending.studentId = target.id;
+      pending.transactionId = saved.id;
+      pending.matchedAt = new Date();
+      pending.note = 'auto_matched';
+      await manager.save(pending);
+      return { message: 'success' };
+    });
   }
 
   async cancelPayment(referenceCode: string, userId: string): Promise<void> {
-    const tx = await this.txRepo.findOne({ where: { referenceCode } });
-    if (!tx) throw new NotFoundException('Giao dịch không tồn tại');
-    if (tx.studentId !== userId)
-      throw new NotFoundException('Giao dịch không tồn tại');
-    if (tx.status !== TransactionStatus.PENDING) return;
+    await this.dataSource.transaction(async (manager) => {
+      const tx = await manager.findOne(Transaction, {
+        where: { referenceCode },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!tx || tx.studentId !== userId)
+        throw new NotFoundException('Giao dịch không tồn tại');
+      if (tx.status !== TransactionStatus.PENDING) return;
+      tx.status = TransactionStatus.FAILED;
+      tx.description = 'Đã hủy nạp tiền';
+      await manager.save(tx);
+    });
+  }
 
-    tx.status = TransactionStatus.FAILED;
-    tx.description = 'Đã hủy nạp tiền';
-    await this.txRepo.save(tx);
+  async expirePayment(tx: Transaction): Promise<Transaction> {
+    if (
+      tx.status === TransactionStatus.PENDING &&
+      tx.type === TransactionType.CREDIT &&
+      (
+        tx.expiresAt ?? new Date(tx.createdAt.getTime() + 30 * 60 * 1000)
+      ).getTime() <= Date.now()
+    ) {
+      // Conditional UPDATE cannot overwrite a concurrently committed webhook.
+      await this.txRepo.update(
+        { id: tx.id, status: TransactionStatus.PENDING },
+        { status: TransactionStatus.FAILED },
+      );
+      return (await this.txRepo.findOneBy({ id: tx.id }))!;
+    }
+    return tx;
   }
 
   async checkStatus(
@@ -319,11 +394,12 @@ export class SePayService {
     amount: number;
     createdAt: string;
   } | null> {
-    const tx = await this.txRepo.findOne({ where: { referenceCode } });
+    let tx = await this.txRepo.findOne({ where: { referenceCode } });
     if (!tx) return null;
     if (user.role === 'student' && tx.studentId !== user.id) {
       throw new NotFoundException('Giao dịch không tồn tại');
     }
+    tx = await this.expirePayment(tx);
     return {
       status: tx.status,
       amount: tx.amount,
@@ -333,156 +409,55 @@ export class SePayService {
 
   // ─── PRIVATE HELPERS ──────────────────────────────────────────────────────
 
-  private parseWebhook(body: any): SePayWebhookDto {
-    const rawContent =
+  private parseWebhook(input: unknown): SePayWebhookDto {
+    if (!input || typeof input !== 'object' || Array.isArray(input))
+      throw new BadRequestException('Invalid webhook');
+    const body = input as Record<string, unknown>;
+    const transferType = String(body.transferType ?? body.type ?? '')
+      .toLowerCase()
+      .trim();
+    const id = String(body.id ?? '').trim();
+    const amount = Number(body.transferAmount ?? body.amount);
+    const content = String(
       body.content ??
-      body.code ??
-      body.description ??
-      body.transactionContent ??
-      '';
+        body.code ??
+        body.description ??
+        body.transactionContent ??
+        '',
+    ).trim();
+    if (
+      transferType === 'in' &&
+      (!/^[0-9]{1,50}$/.test(id) ||
+        !Number.isSafeInteger(amount) ||
+        amount <= 0 ||
+        amount > 2147483647)
+    ) {
+      throw new BadRequestException({
+        code: 'INVALID_WEBHOOK',
+        message: 'Webhook requires a transfer ID and a positive integer amount',
+      });
+    }
+    if (content.length > 255)
+      throw new BadRequestException('Webhook content exceeds 255 characters');
     return {
-      id: Number(body.id) || 0,
-      amount:
-        Number(
-          String(body.transferAmount ?? body.amount).replace(/[^0-9.-]/g, ''),
-        ) || 0,
-      content: String(rawContent).trim(),
-      transferType: String(body.transferType ?? body.type ?? '')
-        .toLowerCase()
-        .trim(),
-      sender: String(body.sender ?? '').trim(),
-      bankRef: String(body.tid ?? body.refNo ?? '').trim(),
-      bankName: String(body.bankName ?? body.bankAbbreviation ?? '').trim(),
+      id,
+      amount,
+      content,
+      transferType,
+      accountNumber:
+        body.accountNumber == null
+          ? undefined
+          : String(body.accountNumber).trim(),
+      sender: String(body.sender ?? '')
+        .trim()
+        .slice(0, 100),
+      bankRef: String(body.tid ?? body.refNo ?? '')
+        .trim()
+        .slice(0, 64),
+      bankName: String(body.bankName ?? body.bankAbbreviation ?? '')
+        .trim()
+        .slice(0, 100),
     };
-  }
-
-  private async tryMatchByRefCode(
-    dto: SePayWebhookDto,
-  ): Promise<{ message: string } | null> {
-    const refCode = this.parseRefCode(dto.content);
-    this.logger.debug(`[tryMatchByRefCode] Parsed refCode: ${refCode}`);
-    if (!refCode) return null;
-
-    const tx = await this.txRepo.findOne({ where: { referenceCode: refCode } });
-    if (!tx) {
-      this.logger.debug(
-        `[tryMatchByRefCode] Không tìm thấy giao dịch với referenceCode: ${refCode}, tiếp tục kiểm tra mã SV`,
-      );
-      return null;
-    }
-
-    if (tx.status === TransactionStatus.SUCCESS) {
-      this.logger.log(`Giao dịch đã được xử lý trước đó: ${refCode}`);
-      return { message: 'already_processed' };
-    }
-
-    if (tx.amount !== 0 && tx.amount !== dto.amount) {
-      this.logger.warn(
-        `Số tiền không khớp: expected=${tx.amount}, actual=${dto.amount}`,
-      );
-      return { message: 'amount_mismatch' };
-    }
-
-    await this.dataSource.transaction(async (manager) => {
-      const account = await manager.findOne(Account, {
-        where: { studentId: tx.studentId },
-      });
-      if (!account)
-        throw new NotFoundException(
-          `Không tìm thấy ví cho studentId: ${tx.studentId}`,
-        );
-      if (account.status !== AccountStatus.ACTIVE)
-        throw new BadRequestException(
-          `Ví đang bị đóng băng: ${account.status}`,
-        );
-
-      account.balance = Number(account.balance) + Number(dto.amount);
-      await manager.save(account);
-      this.logger.log(
-        `Đã cộng ${dto.amount}đ vào ví ${account.id}, balance mới: ${account.balance}`,
-      );
-
-      const currentTx = await manager.findOne(Transaction, {
-        where: { id: tx.id },
-      });
-      if (currentTx && currentTx.status !== TransactionStatus.SUCCESS) {
-        currentTx.status = TransactionStatus.SUCCESS;
-        currentTx.amount =
-          currentTx.amount === 0 ? dto.amount : currentTx.amount;
-        currentTx.description = `Nạp tiền qua ngân hàng - ${dto.content}`;
-        await manager.save(currentTx);
-      }
-    });
-
-    this.logger.log(
-      `Nạp tiền thành công (refCode): ${tx.studentCode} +${dto.amount}đ (ref: ${refCode})`,
-    );
-    return { message: 'success' };
-  }
-
-  private async tryMatchByStudentCode(
-    dto: SePayWebhookDto,
-    idemKey: string,
-    transferId: string,
-  ): Promise<{ message: string } | null> {
-    const student = await this.matchStudentByContent(dto.content);
-    this.logger.debug(
-      `[tryMatchByStudentCode] Matched student: ${student ? student.studentCode : 'null'}`,
-    );
-    if (!student) return null;
-
-    if (dto.amount < 1000 || dto.amount > 5000000) {
-      this.logger.warn(
-        `Số tiền ngoài phạm vi cho phép: ${dto.amount}, chuyển sang hàng đợi chờ khớp`,
-      );
-      await this.topupPendingService.createFromWebhook({
-        transferId,
-        amount: dto.amount,
-        content: dto.content,
-        sender: dto.sender,
-        bankRef: dto.bankRef,
-        bankName: dto.bankName,
-        note: 'amount_out_of_range',
-      });
-      return { message: 'pending_match' };
-    }
-
-    await this.dataSource.transaction(async (manager) => {
-      const account = await manager.findOne(Account, {
-        where: { studentId: student.id },
-      });
-      if (!account)
-        throw new NotFoundException(
-          `Không tìm thấy ví cho sinh viên ${student.studentCode}`,
-        );
-      if (account.status !== AccountStatus.ACTIVE)
-        throw new BadRequestException(
-          `Ví đang bị đóng băng: ${account.status}`,
-        );
-
-      account.balance = Number(account.balance) + Number(dto.amount);
-      await manager.save(account);
-      this.logger.log(
-        `Đã cộng ${dto.amount}đ vào ví ${account.id}, balance mới: ${account.balance}`,
-      );
-
-      const tx = manager.create(Transaction, {
-        amount: dto.amount,
-        type: TransactionType.CREDIT,
-        status: TransactionStatus.SUCCESS,
-        idempotencyKey: idemKey,
-        description: `Nạp tiền qua ngân hàng - ${dto.content}`,
-        studentCode: student.studentCode,
-        studentId: student.id,
-        accountId: account.id,
-      });
-      await manager.save(tx);
-    });
-
-    this.logger.log(
-      `Nạp tiền thành công (mã SV): ${student.studentCode} +${dto.amount}đ`,
-    );
-    return { message: 'success' };
   }
 
   private async matchStudentByContent(
@@ -517,8 +492,7 @@ export class SePayService {
   }
 
   private parseRefCode(content: string): string | null {
-    const cleaned = content.replace(/[^A-Z0-9]/g, '');
-    const match = cleaned.match(/SCP[A-Z0-9]+/);
+    const match = content.toUpperCase().match(/SCP[A-Z0-9]+/);
     return match ? match[0] : null;
   }
 }

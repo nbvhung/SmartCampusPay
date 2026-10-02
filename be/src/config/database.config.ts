@@ -9,6 +9,9 @@ export default registerAs('database', (): TypeOrmModuleOptions => ({
   password: process.env.DB_PASS || 'postgres',
   database: process.env.DB_NAME || 'smartcampuspay',
   entities: [__dirname + '/../**/*.entity{.ts,.js}'],
-  synchronize: process.env.NODE_ENV !== 'production',
+  // Apply reviewed migrations first; automatic schema sync must be opt-in.
+  synchronize:
+    process.env.DB_SYNCHRONIZE === 'true' &&
+    process.env.NODE_ENV !== 'production',
   logging: process.env.NODE_ENV !== 'production',
 }));
