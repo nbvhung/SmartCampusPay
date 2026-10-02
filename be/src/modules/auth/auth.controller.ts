@@ -7,6 +7,7 @@ import {
   Req,
   HttpCode,
   HttpStatus,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { Public } from '../../common/decorators/public.decorator';
@@ -84,13 +85,16 @@ export class AuthController {
   async refresh(@Req() req: any, @Res({ passthrough: true }) res: any) {
     const refreshToken = req.cookies?.refresh_token;
     if (!refreshToken) {
-      res.status(HttpStatus.UNAUTHORIZED).json({
-        success: false,
-        message: 'Không có refresh token',
-      });
-      return;
+      this.clearTokenCookies(res);
+      throw new UnauthorizedException('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại');
     }
-    const result = await this.service.refresh(refreshToken);
+    let result: Awaited<ReturnType<AuthService['refresh']>>;
+    try {
+      result = await this.service.refresh(refreshToken);
+    } catch (error) {
+      if (error instanceof UnauthorizedException) this.clearTokenCookies(res);
+      throw error;
+    }
     this.setTokenCookies(res, result.accessToken, result.refreshToken);
     return { message: 'Làm mới token thành công' };
   }

@@ -10,7 +10,7 @@ interface JwtPayload {
 
 const PROTECTED_STUDENT = ['/student'];
 const PROTECTED_ADMIN = ['/admin'];
-const AUTH_ROUTES = ['/login', '/change-password'];
+const AUTH_ROUTES = ['/login', '/login/student', '/login/admin', '/change-password'];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -18,11 +18,10 @@ export function proxy(request: NextRequest) {
 
   const isProtectedStudent = PROTECTED_STUDENT.some((p) => pathname.startsWith(p));
   const isProtectedAdmin = PROTECTED_ADMIN.some((p) => pathname.startsWith(p));
-  const isProtected = isProtectedStudent || isProtectedAdmin;
+  const isProtected = isProtectedStudent || isProtectedAdmin || pathname === '/change-password';
 
   if (isProtected && !accessToken) {
-    const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('redirect', pathname);
+    const loginUrl = new URL(isProtectedAdmin ? '/login/admin' : '/login/student', request.url);
     return NextResponse.redirect(loginUrl);
   }
 
@@ -31,7 +30,9 @@ export function proxy(request: NextRequest) {
       const payload = jwtDecode<JwtPayload>(accessToken);
       const now = Math.floor(Date.now() / 1000);
 
-      if (payload.exp < now) {
+      if (!['student', 'admin', 'super_admin'].includes(payload.role) || !Number.isFinite(payload.exp)) throw new Error('Invalid session');
+      // AuthBoundary waits for backend verification and refresh before mounting pages.
+      if (payload.exp <= now) {
         return NextResponse.next();
       }
 
@@ -51,6 +52,9 @@ export function proxy(request: NextRequest) {
       if (isProtectedAdmin && payload.role === 'student') {
         return NextResponse.redirect(new URL('/student/dashboard', request.url));
       }
+      if (isProtectedStudent && payload.role !== 'student') {
+        return NextResponse.redirect(new URL('/admin/dashboard', request.url));
+      }
     } catch {
       const response = NextResponse.redirect(new URL('/login', request.url));
       response.cookies.delete('access_token');
@@ -63,6 +67,6 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|favicon.ico|public).*)',
+    '/student/:path*', '/admin/:path*', '/login/:path*', '/change-password',
   ],
 };

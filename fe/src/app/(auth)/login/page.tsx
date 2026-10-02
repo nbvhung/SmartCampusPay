@@ -1,7 +1,8 @@
 'use client';
 
 import { useRef, useState, type FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import Link from 'next/link';
 import Image from 'next/image';
 import axios from 'axios';
 import { ArrowRight, ArrowUpRight, Check, ChevronDown, CreditCard, Eye, EyeOff, Fingerprint, Info, Loader2, LockKeyhole, ShieldCheck, Sparkles, UserRound, Wifi } from 'lucide-react';
@@ -19,10 +20,13 @@ export default function LoginPage() {
   const submitting = useRef(false);
   const helpRef = useRef<HTMLDetailsElement>(null);
   const router = useRouter();
+  const pathname = usePathname();
+  const portal = pathname === '/login/student' ? 'student' : pathname === '/login/admin' ? 'admin' : null;
   const { setUser, setMustChangePassword } = useAuth();
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!portal) return;
     if (submitting.current) return;
     const form = event.currentTarget;
     const identifier = (form.elements.namedItem('identifier') as HTMLInputElement).value.trim();
@@ -32,7 +36,7 @@ export default function LoginPage() {
     setError('');
     setIsLoading(true);
     try {
-      const res = await authApi.login(identifier, password);
+      const res = await (portal === 'student' ? authApi.login(identifier, password) : authApi.adminLogin(identifier, password));
       const data = res.data?.data;
       if (!data?.user) throw new Error('Không nhận được thông tin tài khoản. Vui lòng thử lại.');
       setUser(data.user);
@@ -58,9 +62,9 @@ export default function LoginPage() {
     <main className="login-page">
       <section className="login-form-panel" aria-label="Đăng nhập SmartCampusPay">
         <header className="login-header">
-          <a href="/login" className="login-brand" aria-label="SmartCampusPay — trang đăng nhập">
+          <Link href="/" className="login-brand" aria-label="SmartCampusPay — trang chủ">
             <PtitBrand />
-          </a>
+          </Link>
           <ThemeToggle />
         </header>
 
@@ -68,15 +72,19 @@ export default function LoginPage() {
           <div className="login-welcome">
             <div className="login-eyebrow"><span /> KẾT NỐI VỚI KHUÔN VIÊN CỦA BẠN</div>
             <h1>Chào mừng<br />trở lại<span className="login-heading-dot">.</span></h1>
-            <p>Đăng nhập để quản lý ví và những giao dịch<br className="login-desktop-break" /> hằng ngày của bạn.</p>
+            <p>{portal === 'admin' ? 'Đăng nhập cổng quản trị để quản lý hệ thống.' : portal === 'student' ? 'Đăng nhập cổng sinh viên để quản lý ví và giao dịch của bạn.' : 'Chọn cổng đăng nhập phù hợp với tài khoản được cấp.'}</p>
           </div>
 
-          <form onSubmit={handleSubmit} className="login-form" aria-busy={isLoading}>
+          {!portal ? <div className="login-portal-options">
+            <Link href="/login/student" className="login-portal-option"><UserRound size={23} /><div><strong>Sinh viên</strong><small>Xem ví, nạp tiền và giao dịch của bạn.</small></div><ArrowRight size={20} /></Link>
+            <Link href="/login/admin" className="login-portal-option"><ShieldCheck size={23} /><div><strong>Quản trị viên</strong><small>Quản lý sinh viên, thẻ, ví và điểm thanh toán.</small></div><ArrowRight size={20} /></Link>
+          </div> : <><div className="login-portal-heading"><strong>{portal === 'student' ? 'Cổng sinh viên' : 'Cổng quản trị'}</strong><Link href="/login">Đổi cổng đăng nhập</Link></div>
+          <form key={portal} onSubmit={handleSubmit} className="login-form" aria-busy={isLoading}>
             <div className="login-field">
-              <label htmlFor="identifier">Tên đăng nhập</label>
+              <label htmlFor="identifier">{portal === 'student' ? 'Mã sinh viên' : 'Tên đăng nhập quản trị'}</label>
               <div className="login-input-wrap">
                 <UserRound size={19} aria-hidden="true" />
-                <input id="identifier" name="identifier" type="text" placeholder="Mã sinh viên hoặc tài khoản quản trị"
+                <input id="identifier" name="identifier" type="text" placeholder={portal === 'student' ? 'Nhập mã sinh viên' : 'Nhập tài khoản quản trị'}
                   required autoComplete="username" autoCapitalize="none" spellCheck={false} maxLength={50}
                   disabled={isLoading} aria-invalid={!!error} aria-describedby={error ? 'login-error' : undefined} />
               </div>
@@ -105,10 +113,10 @@ export default function LoginPage() {
               <span>{isLoading ? 'Đang đăng nhập...' : 'Đăng nhập'}</span>
               {isLoading ? <Loader2 size={20} className="login-spinner" /> : <ArrowRight size={20} />}
             </button>
-          </form>
+          </form></>}
 
           <div className="login-divider"><span /> MỘT TÀI KHOẢN, MỌI TIỆN ÍCH <span /></div>
-          <div className="login-account-note"><span className="login-note-icon"><ShieldCheck size={21} /></span><p>Dành cho sinh viên và quản trị viên<small>Sử dụng tài khoản được cấp để truy cập hệ thống.</small></p></div>
+          <div className="login-account-note"><span className="login-note-icon"><ShieldCheck size={21} /></span><p>{portal === 'admin' ? 'Quyền quản trị theo tài khoản được cấp' : 'Truy cập đúng cổng tài khoản'}<small>{portal === 'admin' ? 'Chỉ quản trị cấp cao được tạo, sửa, khóa và xóa quản trị viên.' : 'Sinh viên chỉ truy cập ví và giao dịch cá nhân.'}</small></p></div>
 
           <details className="login-help" ref={helpRef} open={helpOpen} onToggle={event => setHelpOpen(event.currentTarget.open)}>
             <summary><span><Info size={16} /> Lần đầu đăng nhập hoặc cần hỗ trợ?</span><ChevronDown size={16} /></summary>

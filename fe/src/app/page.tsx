@@ -12,8 +12,8 @@ export default function HomePage() {
         <h1>Một chạm.<br /><span>Mọi tiện ích.</span></h1>
         <p>Ví sinh viên, thẻ NFC và thanh toán nội bộ.<br />Tất cả trong một không gian, dành cho cộng đồng PTIT.</p>
         <div className="home-portals">{[
-          { href: '/student/dashboard', icon: GraduationCap, title: 'Cổng sinh viên', description: 'Quản lý ví, nạp tiền và lịch sử thanh toán.' },
-          { href: '/admin/dashboard', icon: ShieldCheck, title: 'Không gian quản trị', description: 'Theo dõi hoạt động và quản lý hệ thống.' },
+          { href: '/login/student', icon: GraduationCap, title: 'Sinh viên đăng nhập', description: 'Quản lý ví, nạp tiền và lịch sử thanh toán cá nhân.' },
+          { href: '/login/admin', icon: ShieldCheck, title: 'Quản trị viên đăng nhập', description: 'Theo dõi hoạt động và quản lý hệ thống theo quyền được cấp.' },
           { href: '/pos', icon: Monitor, title: 'Thiết bị POS', description: 'Thanh toán bằng thẻ tại điểm bán.' },
         ].map(({ href, icon: Icon, title, description }) => <Link href={href} key={href} className="home-portal"><span className="stat-icon"><Icon size={24} /></span><h2>{title}<ArrowUpRight size={19} /></h2><p>{description}</p></Link>)}</div>
       </main>

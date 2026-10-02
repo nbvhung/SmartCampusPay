@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { LogOut, Menu, Loader2 } from 'lucide-react';
 import { authApi } from '@/lib/auth-api';
-import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/auth-context';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 interface HeaderProps {
   title: string;
@@ -11,13 +11,15 @@ interface HeaderProps {
   onMenuToggle?: () => void;
 }
 export function Header({ title, user, menuOpen, onMenuToggle }: HeaderProps) {
-  const router = useRouter();
+  const { setUser, setMustChangePassword } = useAuth();
   const [leaving, setLeaving] = useState(false);
   async function handleLogout() {
     if (leaving) return;
     setLeaving(true);
     try { await authApi.logout(); } catch { /* return to login */ }
-    router.push('/login');
+    setUser(null);
+    setMustChangePassword(false);
+    window.location.href = '/login/admin';
   }
   const name = user?.fullName || user?.studentCode || 'Quản trị viên';
   return <header className="app-header">

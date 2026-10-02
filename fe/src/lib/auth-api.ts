@@ -1,12 +1,15 @@
 import api from './axios';
-import type { LoginResponse } from '../types/auth';
+import type { AuthUser, LoginResponse } from '../types/auth';
+import type { Account } from '../types';
 
 export const authApi = {
   /**
-   * Đăng nhập unified — tự detect student (studentCode) hay admin (username)
+   * Mỗi cổng đăng nhập chỉ xác thực loại tài khoản tương ứng.
    */
-  login: (identifier: string, password: string) =>
-    api.post<{ success: boolean; data: LoginResponse }>('/auth/login/unified', { identifier, password }),
+  login: (studentCode: string, password: string) =>
+    api.post<{ success: boolean; data: LoginResponse }>('/auth/login', { studentCode, password }),
+  adminLogin: (username: string, password: string) =>
+    api.post<{ success: boolean; data: LoginResponse }>('/auth/admin/login', { username, password }),
 
   /**
    * Làm mới access token (refresh_token đọc từ httpOnly cookie)
@@ -32,5 +35,5 @@ export const authApi = {
    * Lấy thông tin user hiện tại
    */
   me: () =>
-    api.get<{ success: boolean; data: any }>('/auth/me'),
+    api.get<{ success: boolean; data: AuthUser & { mustChangePassword?: boolean; accounts?: Account[] } }>('/auth/me'),
 };

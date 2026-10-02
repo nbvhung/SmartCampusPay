@@ -16,6 +16,7 @@ import { HardwareDeviceModule } from './modules/hardware-device/hardware-device.
 import { RedisModule } from './modules/redis/redis.module';
 import { SePayModule } from './modules/sepay/sepay.module';
 import { TopupPendingModule } from './modules/topup-pending/topup-pending.module';
+import { TopupClaimsModule } from './modules/topup-claims/topup-claims.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { TopupPendingModule } from './modules/topup-pending/topup-pending.module
     RedisModule,
     SePayModule,
     TopupPendingModule,
+    TopupClaimsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

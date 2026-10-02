@@ -5,7 +5,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource, Raw } from 'typeorm';
+import { Repository, DataSource, EntityManager, Raw } from 'typeorm';
 import { TopupPending, TopupPendingStatus } from './topup-pending.entity';
 import {
   Transaction,
@@ -56,9 +56,19 @@ export class TopupPendingService {
     studentCode: string,
     adminId: string,
   ): Promise<TopupPending> {
+    return this.dataSource.transaction((manager) => this.matchWithManager(manager, id, studentCode, adminId));
+  }
+
+  // Called by claim review so credit, transfer and claim commit together.
+  async matchWithManager(
+    manager: EntityManager,
+    id: string,
+    studentCode: string,
+    adminId: string,
+    expectedAmount?: number,
+  ): Promise<TopupPending> {
     if (!/^[A-Za-z0-9]{5,20}$/.test(studentCode.trim()))
       throw new BadRequestException('Invalid student code');
-    return this.dataSource.transaction(async (manager) => {
       const pending = await manager.findOne(TopupPending, {
         where: { id },
         lock: { mode: 'pessimistic_write' },
@@ -67,6 +77,9 @@ export class TopupPendingService {
         throw new NotFoundException('Không tìm thấy giao dịch chưa khớp');
       if (pending.status !== TopupPendingStatus.PENDING) {
         throw new BadRequestException('Giao dịch đã được xử lý');
+      }
+      if (expectedAmount !== undefined && pending.amount !== expectedAmount) {
+        throw new BadRequestException('Số tiền thực nhận không khớp số tiền trong hồ sơ');
       }
 
       validateTopupAmount(pending.amount);
@@ -135,7 +148,6 @@ export class TopupPendingService {
         `Đã khớp pending ${pending.id} với sinh viên ${student.studentCode} +${pending.amount}đ`,
       );
       return manager.save(pending);
-    });
   }
 
   async ignore(id: string, adminId: string): Promise<TopupPending> {

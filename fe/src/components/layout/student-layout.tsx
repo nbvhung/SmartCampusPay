@@ -1,7 +1,8 @@
 'use client';
 import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
+import { useAuth } from '@/contexts/auth-context';
 import { LayoutDashboard, Plus, History, User, Monitor, LogOut, Loader2 } from 'lucide-react';
 import { authApi } from '@/lib/auth-api';
 import { PtitBrand } from '@/components/ui/ptit-brand';
@@ -14,13 +15,15 @@ const navItems = [
 ];
 export function StudentLayout({ children, title }: { children: ReactNode; title?: string }) {
   const pathname = usePathname();
-  const router = useRouter();
+  const { setUser, setMustChangePassword } = useAuth();
   const [leaving, setLeaving] = useState(false);
   async function handleLogout() {
     if (leaving) return;
     setLeaving(true);
     try { await authApi.logout(); } catch { /* return to login */ }
-    router.push('/login');
+    setUser(null);
+    setMustChangePassword(false);
+    window.location.href = '/login/student';
   }
   return <div className="student-shell">
     <a className="skip-link" href="#main-content">Đến nội dung chính</a>

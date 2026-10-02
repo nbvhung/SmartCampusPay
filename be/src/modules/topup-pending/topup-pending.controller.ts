@@ -2,7 +2,6 @@ import {
   Controller,
   Get,
   Post,
-  Body,
   Param,
   Query,
   UseGuards,
@@ -12,7 +11,7 @@ import { TopupPendingService } from './topup-pending.service';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
-import { MatchTopupDto, ListTopupDto } from './dto/match-topup.dto';
+import { ListTopupDto } from './dto/match-topup.dto';
 
 @Controller('topup-pending')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -23,15 +22,6 @@ export class TopupPendingController {
   @Get()
   findAll(@Query() dto: ListTopupDto) {
     return this.service.findAll(dto);
-  }
-
-  @Post(':id/match')
-  async match(
-    @Param('id') id: string,
-    @Body() dto: MatchTopupDto,
-    @CurrentUser() user: any,
-  ) {
-    return this.service.match(id, dto.studentCode, user.id);
   }
 
   @Post(':id/ignore')

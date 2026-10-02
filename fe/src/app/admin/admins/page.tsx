@@ -17,7 +17,8 @@ export default function AdminAdminsPage() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const currentUserId = (user as any)?.id;
+  const currentUserId = user?.id;
+  const canManageAdmins = user?.role === 'super_admin';
 
   const fetchAdmins = useCallback(async () => {
     try {
@@ -111,7 +112,7 @@ export default function AdminAdminsPage() {
     },
     {
       key: 'actions', header: 'Thao tác',
-      render: (a) => (
+      render: (a) => canManageAdmins ? (
         <div className="flex gap-2">
           {(a.role !== 'super_admin' || currentUserId === a.id) && (
             <button
@@ -136,21 +137,21 @@ export default function AdminAdminsPage() {
             </button>
           )}
         </div>
-      ),
+      ) : <span className="text-xs text-gray-500">Chỉ xem</span>,
     },
   ];
 
   return (
     <AdminLayout title="Quản lý admin">
       <div className="flex items-center justify-between mb-6">
-        <p className="text-sm text-gray-500">Quản lý tài khoản quản trị hệ thống</p>
-        <button
+        <p className="text-sm text-gray-500">{canManageAdmins ? 'Bạn có quyền quản lý tài khoản quản trị hệ thống.' : 'Bạn có quyền xem. Chỉ quản trị cấp cao được thêm, sửa, khóa và xóa tài khoản.'}</p>
+        {canManageAdmins && <button
           onClick={openCreateModal}
           className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-medium"
         >
           <Plus className="w-4 h-4" />
           Thêm admin
-        </button>
+        </button>}
       </div>
 
       <DataTable columns={columns} data={admins} emptyMessage="Chưa có admin nào" />

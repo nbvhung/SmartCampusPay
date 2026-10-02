@@ -1,3 +1,10 @@
+.login-portal-options { display: grid; gap: 14px; margin-top: 28px; }
+.login-portal-option { display: flex; align-items: center; gap: 14px; padding: 20px; border: 1px solid var(--login-border); border-radius: 14px; background: var(--login-input); color: var(--login-text); text-decoration: none; }
+.login-portal-option:hover { border-color: var(--login-accent); }
+.login-portal-option div { flex: 1; }
+.login-portal-option small { display: block; margin-top: 6px; color: var(--login-muted); line-height: 1.5; }
+.login-portal-heading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; margin: 24px 0 16px; }
+.login-portal-heading a { color: var(--login-accent); font-size: 13px; }
 .login-page {
   --login-bg: #fafbfc;
   --login-text: #172235;
