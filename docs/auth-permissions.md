@@ -11,8 +11,8 @@ Chọn cổng không cấp quyền. Backend xác thực tài khoản trong đún
 
 | Vai trò | Quyền |
 | --- | --- |
-| `student` | Ví, thẻ, hồ sơ và giao dịch cá nhân; nạp tiền cho chính mình. Không truy cập API quản trị. |
-| `admin` | Quản lý sinh viên, thẻ, ví, điểm thanh toán, giao dịch và nạp tiền chờ khớp; xem danh sách quản trị viên. |
+| `student` | Ví, thẻ, hồ sơ và giao dịch cá nhân; nạp tiền cho chính mình; nộp và theo dõi hồ sơ khớp nạp kèm minh chứng của chính mình. Không truy cập API quản trị. |
+| `admin` | Quản lý sinh viên, thẻ, ví, điểm thanh toán, giao dịch; xem minh chứng và đối soát hồ sơ khớp nạp; xem danh sách quản trị viên. |
 | `super_admin` | Các quyền admin và tạo, sửa, khóa, xóa tài khoản quản trị viên. |
 | Thiết bị POS | Xác thực bằng `X-API-Key` của merchant tại API thanh toán; không có quyền quản trị từ việc mở trang POS. |
 

@@ -1,6 +1,6 @@
 import api from './axios';
 import type { AuthUser, LoginResponse } from '../types/auth';
-import type { Account } from '../types';
+import type { Account, Card } from '../types';
 
 export const authApi = {
   /**
@@ -35,5 +35,5 @@ export const authApi = {
    * Lấy thông tin user hiện tại
    */
   me: () =>
-    api.get<{ success: boolean; data: AuthUser & { mustChangePassword?: boolean; accounts?: Account[] } }>('/auth/me'),
+    api.get<{ success: boolean; data: AuthUser & { mustChangePassword?: boolean; accounts?: Account[]; cards?: Card[] } }>('/auth/me'),
 };

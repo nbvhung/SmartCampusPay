@@ -3,13 +3,14 @@ import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '@/contexts/auth-context';
-import { LayoutDashboard, Plus, History, User, Monitor, LogOut, Loader2 } from 'lucide-react';
+import { LayoutDashboard, Plus, History, User, Monitor, LogOut, Loader2, FileCheck2 } from 'lucide-react';
 import { authApi } from '@/lib/auth-api';
 import { PtitBrand } from '@/components/ui/ptit-brand';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 const navItems = [
   { href: '/student/dashboard', label: 'Tổng quan', icon: LayoutDashboard },
   { href: '/student/topup', label: 'Nạp tiền', icon: Plus },
+  { href: '/student/topup-claims', label: 'Khớp nạp', icon: FileCheck2 },
   { href: '/student/transactions', label: 'Lịch sử', icon: History },
   { href: '/student/profile', label: 'Hồ sơ', icon: User },
 ];

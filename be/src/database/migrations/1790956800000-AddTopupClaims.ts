@@ -3,7 +3,9 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 export class AddTopupClaims1790956800000 implements MigrationInterface {
   name = 'AddTopupClaims1790956800000';
   async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`CREATE TYPE "public"."topup_claims_status_enum" AS ENUM ('pending', 'matched', 'rejected')`);
+    await queryRunner.query(
+      `CREATE TYPE "public"."topup_claims_status_enum" AS ENUM ('pending', 'matched', 'rejected')`,
+    );
     await queryRunner.query(`CREATE TABLE "topup_claims" (
       "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
       "studentId" uuid NOT NULL REFERENCES "students"("id"),
@@ -20,8 +22,12 @@ export class AddTopupClaims1790956800000 implements MigrationInterface {
       "reviewNote" varchar(1000), "createdAt" timestamptz NOT NULL DEFAULT now(),
       "updatedAt" timestamptz NOT NULL DEFAULT now(), PRIMARY KEY ("id")
     )`);
-    await queryRunner.query(`CREATE INDEX "IDX_topup_claims_student_created" ON "topup_claims" ("studentId", "createdAt")`);
-    await queryRunner.query(`CREATE UNIQUE INDEX "UQ_topup_claims_open_reference" ON "topup_claims" ("studentId", "bankName", "bankReference") WHERE "status" IN ('pending', 'matched')`);
+    await queryRunner.query(
+      `CREATE INDEX "IDX_topup_claims_student_created" ON "topup_claims" ("studentId", "createdAt")`,
+    );
+    await queryRunner.query(
+      `CREATE UNIQUE INDEX "UQ_topup_claims_open_reference" ON "topup_claims" ("studentId", "bankName", "bankReference") WHERE "status" IN ('pending', 'matched')`,
+    );
   }
   async down(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`DROP TABLE "topup_claims"`);

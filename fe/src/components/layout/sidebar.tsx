@@ -2,7 +2,7 @@
 import Link from 'next/link';
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Users, Store, Receipt, Shield, CreditCard, Wallet, Monitor, Inbox, X } from 'lucide-react';
+import { LayoutDashboard, Users, Store, Receipt, Shield, CreditCard, Wallet, Monitor, Inbox, X, FileCheck2 } from 'lucide-react';
 import { PtitBrand } from '@/components/ui/ptit-brand';
 const navItems = [
   { href: '/admin/dashboard', label: 'Tổng quan', icon: LayoutDashboard },
@@ -12,6 +12,7 @@ const navItems = [
   { href: '/admin/merchants', label: 'Điểm thanh toán', icon: Store },
   { href: '/admin/transactions', label: 'Giao dịch', icon: Receipt },
   { href: '/admin/topup-pending', label: 'Nạp chờ khớp', icon: Inbox },
+  { href: '/admin/topup-claims', label: 'Hồ sơ khớp nạp', icon: FileCheck2 },
   { href: '/admin/admins', label: 'Quản trị viên', icon: Shield },
 ];
 function subscribeViewport(callback: () => void) {

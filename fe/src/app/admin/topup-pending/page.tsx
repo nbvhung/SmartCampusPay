@@ -1,6 +1,7 @@
 'use client';
 import { useCallback, useEffect, useState } from 'react';
-import { Inbox, CheckCircle, XCircle, Loader2 } from 'lucide-react';
+import { Inbox, XCircle } from 'lucide-react';
+import Link from 'next/link';
 import { AdminLayout } from '@/components/layout/admin-layout';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { PageLoading } from '@/components/ui/loading-spinner';
@@ -23,7 +24,6 @@ export default function AdminTopupPendingPage() {
   const [loading, setLoading] = useState(true);
   const [list, setList] = useState<TopupPending[]>([]);
   const [tab, setTab] = useState<TopupPendingStatus | 'all'>('pending');
-  const [studentCode, setStudentCode] = useState<Record<string, string>>({});
   const [actingId, setActingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -38,24 +38,6 @@ export default function AdminTopupPendingPage() {
   }, []);
 
   useEffect(() => { fetch(tab); }, [fetch, tab]);
-
-  async function handleMatch(id: string) {
-    const code = (studentCode[id] || '').trim();
-    if (!code) { setError('Nhập mã sinh viên cần khớp'); return; }
-    setError('');
-    setNotice('');
-    setActingId(id);
-    try {
-      await topupPendingApi.match(id, code);
-      setNotice(`Đã khớp ${code} — tiền đã cộng vào ví.`);
-      setStudentCode((s) => ({ ...s, [id]: '' }));
-      fetch(tab);
-    } catch (err: any) {
-      setError(err?.response?.data?.message || 'Khớp thất bại');
-    } finally {
-      setActingId(null);
-    }
-  }
 
   async function handleIgnore(id: string) {
     if (!window.confirm('Chắc chắn bỏ qua giao dịch này?')) return;
@@ -102,23 +84,7 @@ export default function AdminTopupPendingPage() {
       render: (p) =>
         p.status === 'pending' ? (
           <div className="flex items-center gap-2">
-            <input
-              value={studentCode[p.id] || ''}
-              onChange={(e) => setStudentCode((s) => ({ ...s, [p.id]: e.target.value }))}
-              onKeyDown={(e) => e.key === 'Enter' && handleMatch(p.id)}
-              placeholder="MSSV..."
-              disabled={actingId === p.id}
-              className="px-2 py-1.5 border border-gray-300 rounded-lg text-sm w-32 focus:outline-none focus:ring-2 focus:ring-red-500"
-            />
-            <button
-              type="button"
-              onClick={() => handleMatch(p.id)}
-              disabled={actingId === p.id}
-              className="inline-flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-xs font-medium rounded-lg"
-            >
-              {actingId === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
-              Khớp
-            </button>
+            <Link href="/admin/topup-claims" className="text-xs text-red-600 underline">Đối soát qua hồ sơ</Link>
             <button
               type="button"
               onClick={() => handleIgnore(p.id)}
@@ -137,6 +103,11 @@ export default function AdminTopupPendingPage() {
 
   return (
     <AdminLayout title="Nạp chờ khớp">
+      <div className="bg-white border border-gray-200 rounded-xl p-4 mb-5 text-sm">
+        <p>Đây là các khoản tiền ngân hàng đã nhận nhưng chưa xác định được sinh viên.</p>
+        <p className="mt-1 text-gray-500">Mở hồ sơ có minh chứng để đối soát trước khi cộng tiền.</p>
+        <Link href="/admin/topup-claims" className="inline-block mt-2 text-red-600 font-semibold underline">Xem hồ sơ khớp nạp của sinh viên</Link>
+      </div>
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         {statusTabs.map((t) => (
           <button

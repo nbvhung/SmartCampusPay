@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useRef, useCallback } from 'react';
+import Link from 'next/link';
 import { Wallet, History, QrCode, CheckCircle, Clock, Loader2, Copy, User } from 'lucide-react';
 import { StudentLayout } from '@/components/layout/student-layout';
 import { DataTable, type Column } from '@/components/ui/data-table';
@@ -162,6 +163,11 @@ export default function StudentTopupPage() {
 
   return (
     <StudentLayout>
+      <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-6 text-sm text-yellow-700">
+        <p className="font-semibold">Đã chuyển khoản nhưng ví chưa được cộng tiền?</p>
+        <p className="mt-1">Nếu quên ghi mã sinh viên hoặc sai nội dung, gửi hồ sơ kèm ảnh minh chứng để quản trị viên đối soát.</p>
+        <Link href="/student/topup-claims" className="inline-block mt-2 font-semibold underline">Nộp yêu cầu khớp nạp / xem kết quả</Link>
+      </div>
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 mb-6">
         <div className="text-center mb-6">
           <p className="text-sm text-gray-500">Số dư hiện tại</p>

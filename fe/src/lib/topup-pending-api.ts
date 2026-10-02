@@ -22,9 +22,6 @@ export const topupPendingApi = {
       params: status ? { status } : {},
     }),
 
-  match: (id: string, studentCode: string) =>
-    api.post<ApiResponse<TopupPending>>(`/topup-pending/${id}/match`, { studentCode }),
-
   ignore: (id: string) =>
     api.post<ApiResponse<TopupPending>>(`/topup-pending/${id}/ignore`),
 };

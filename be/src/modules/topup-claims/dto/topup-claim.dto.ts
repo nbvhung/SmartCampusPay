@@ -1,8 +1,23 @@
 import { Transform, Type } from 'class-transformer';
-import { IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+  MinLength,
+} from 'class-validator';
 import { TopupClaimStatus } from '../topup-claim.entity';
 
-const trimmed = () => Transform(({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() : value);
+const trimmed = () =>
+  Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  );
 
 export class CreateTopupClaimDto {
   @trimmed() @IsString() @MinLength(2) @MaxLength(100) fullName: string;
@@ -24,7 +39,6 @@ export class ListTopupClaimsDto {
 
 export class MatchTopupClaimDto {
   @IsUUID() pendingId: string;
-  @trimmed() @IsString() @MinLength(5) @MaxLength(1000) note: string;
 }
 
 export class RejectTopupClaimDto {

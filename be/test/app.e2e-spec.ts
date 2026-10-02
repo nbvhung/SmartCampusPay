@@ -114,7 +114,7 @@ describe('Hardware payments with real PostgreSQL', () => {
       db,
     );
     sepay = new SePayService(
-      new ConfigService({ SEPAY_ACCOUNT_NUMBER: '123', SEPAY_API_KEY: 'test' }),
+      new ConfigService({ SEPAY_ACCOUNT_NUMBER: '123', SEPAY_WEBHOOK_ACCOUNT_NUMBER: '123', SEPAY_API_KEY: 'test' }),
       db,
       db.getRepository(Transaction),
       accounts,
@@ -209,6 +209,7 @@ describe('Hardware payments with real PostgreSQL', () => {
         fullName: 'Test Student',
         email: 'test@example.test',
         faculty: 'Test',
+        mustChangePassword: false,
       });
     account = await db
       .getRepository(Account)
