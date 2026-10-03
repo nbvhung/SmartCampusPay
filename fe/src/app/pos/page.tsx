@@ -19,7 +19,7 @@ export default function PosPage() {
   const [pending, setPending] = useState<PendingPayment | null>(null);
   const [ready, setReady] = useState(false);
   const sending = useRef(false);
-  const [result, setResult] = useState<{ ok: boolean; tx?: Transaction; error?: string } | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; tx?: Transaction; error?: string; title?: string } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -56,10 +56,62 @@ export default function PosPage() {
           setResult({ ok: false, error: 'Một tab POS khác đang xử lý giao dịch. Chờ kết quả trước khi thử lại.' });
           return;
         }
-        return sendPayment();
+        return pending ? verifyPendingPayment() : sendPayment();
       });
     } finally {
       sending.current = false;
+    }
+  }
+
+  async function verifyPendingPayment() {
+    if (!pending || !apiKey.trim()) return;
+    setLoading(true);
+    setResult(null);
+    try {
+      // Reuse preparePayment to verify that the operator entered the same
+      // merchant key that created the pending request.
+      const request = await preparePayment(
+        localStorage,
+        apiKey,
+        pending.cardUid,
+        pending.amount,
+      );
+      const res = await posApi.findPayment(
+        apiKey.trim(),
+        request.idempotencyKey,
+      );
+      finishPayment(localStorage, request.idempotencyKey);
+      setPending(null);
+      setResult({ ok: true, tx: res.data.data });
+      setPaid(true);
+    } catch (err: unknown) {
+      const response = axios.isAxiosError<{ code?: string; message?: string }>(err)
+        ? err.response
+        : undefined;
+      if (response?.status === 404 && response.data?.code === 'PAYMENT_NOT_FOUND') {
+        finishPayment(localStorage, pending.idempotencyKey);
+        setPending(null);
+        setUid('');
+        setAmount('');
+        setResult({
+          ok: false,
+          title: 'Không tìm thấy giao dịch',
+          error: 'Giao dịch chưa được ghi nhận. Bạn có thể nhập lại UID thẻ và số tiền.',
+        });
+      } else {
+        const message = response?.data?.message;
+        setResult({
+          ok: false,
+          title: 'Chưa thể xác minh',
+          error:
+            message ||
+            (err instanceof Error && !axios.isAxiosError(err)
+              ? err.message
+              : 'Kiểm tra API Key và kết nối rồi thử lại.'),
+        });
+      }
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -83,17 +135,39 @@ export default function PosPage() {
       setResult({ ok: true, tx: res.data.data });
       setPaid(true);
     } catch (err: unknown) {
-      const detail = axios.isAxiosError<{ code?: string; message?: string }>(err) ? err.response?.data : undefined;
-      if (request && detail?.code && TERMINAL_CODES.has(detail.code)) {
+      const response = axios.isAxiosError<{ code?: string; message?: string }>(err) ? err.response : undefined;
+      const detail = response?.data;
+      if (request && (response?.status === 401 || (detail?.code && TERMINAL_CODES.has(detail.code)))) {
         finishPayment(localStorage, request.idempotencyKey);
         setPending(null);
-        setResult({ ok: false, error: detail.message || 'Thanh toán bị từ chối' });
+        setResult({
+          ok: false,
+          title: response?.status === 401 ? 'API Key không hợp lệ' : 'Thanh toán bị từ chối',
+          error: detail?.message || 'Thanh toán bị từ chối',
+        });
       } else {
         setResult({ ok: false, error: 'Chưa xác định kết quả. Giữ nguyên giao dịch và thử xác minh lại. ' + (detail?.message || (err instanceof Error && !axios.isAxiosError(err) ? err.message : '')) });
       }
     } finally {
       setLoading(false);
     }
+  }
+
+  function handleDiscardPending() {
+    if (!pending || loading) return;
+    const confirmed = window.confirm(
+      'Chỉ xóa dữ liệu chờ khi bạn đã kiểm tra giao dịch chưa trừ tiền. Tiếp tục?',
+    );
+    if (!confirmed) return;
+    finishPayment(localStorage, pending.idempotencyKey);
+    setPending(null);
+    setUid('');
+    setAmount('');
+    setResult({
+      ok: false,
+      title: 'Đã xóa dữ liệu chờ',
+      error: 'Bạn có thể nhập lại UID thẻ và số tiền.',
+    });
   }
 
   function handleReset() {
@@ -158,12 +232,22 @@ export default function PosPage() {
             )}
           </button>
 
+          {pending && !loading && (
+            <button
+              type="button"
+              onClick={handleDiscardPending}
+              className="w-full text-sm text-gray-500 hover:text-red-500 underline underline-offset-2"
+            >
+              Xóa dữ liệu giao dịch đang chờ
+            </button>
+          )}
+
           {result && (
             <div className={`rounded-xl p-4 ${result.ok ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
               <div className="flex items-center gap-2 mb-2">
                 {result.ok ? <CheckCircle className="w-5 h-5 text-green-600" /> : <XCircle className="w-5 h-5 text-red-600" />}
                 <span className={`font-semibold ${result.ok ? 'text-green-700' : 'text-red-700'}`}>
-                  {result.ok ? 'Thanh toán thành công' : pending ? 'Chưa xác định kết quả' : 'Thanh toán bị từ chối'}
+                  {result.title || (result.ok ? 'Thanh toán thành công' : pending ? 'Chưa xác định kết quả' : 'Thanh toán bị từ chối')}
                 </span>
               </div>
               {result.ok && result.tx && (
