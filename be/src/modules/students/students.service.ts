@@ -31,10 +31,34 @@ export class StudentsService {
   ) {}
 
   async create(dto: CreateStudentDto): Promise<Student> {
-    const exists = await this.repo.findOne({
-      where: { studentCode: dto.studentCode },
+    const studentCode = dto.studentCode.trim().toUpperCase();
+    const email = dto.email.trim().toLowerCase();
+
+    const codeExists = await this.repo.findOne({
+      where: {
+        studentCode: Raw(
+          (alias) => `UPPER(TRIM(${alias})) = :studentCode`,
+          { studentCode },
+        ),
+      },
     });
-    if (exists) throw new ConflictException('Mã sinh viên đã tồn tại');
+    if (codeExists) throw new ConflictException('Mã sinh viên đã tồn tại');
+
+    const emailExists = await this.repo.findOne({
+      where: {
+        email: Raw((alias) => `LOWER(TRIM(${alias})) = :email`, { email }),
+      },
+    });
+    if (emailExists) throw new ConflictException('Email đã tồn tại');
+
+    const normalizedDto: CreateStudentDto = {
+      ...dto,
+      studentCode,
+      fullName: dto.fullName.trim(),
+      email,
+      phone: dto.phone?.trim() || undefined,
+      faculty: dto.faculty?.trim() || undefined,
+    };
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -43,12 +67,12 @@ export class StudentsService {
     try {
       const student = queryRunner.manager.create(
         Student,
-        dto as Partial<Student>,
+        normalizedDto as Partial<Student>,
       );
 
       // Nếu có dateOfBirth thì sinh password mặc định ddmmyyyy
-      if (dto.dateOfBirth) {
-        const dob = new Date(dto.dateOfBirth);
+      if (normalizedDto.dateOfBirth) {
+        const dob = new Date(normalizedDto.dateOfBirth);
         const defaultPassword = this.formatDobPassword(dob);
         student.passwordHash = await bcrypt.hash(defaultPassword, 10);
         student.mustChangePassword = true;
@@ -68,7 +92,7 @@ export class StudentsService {
       // Tạo thẻ ảo cho sinh viên
       const card = queryRunner.manager.create(Card, {
         studentId: savedStudent.id,
-        uid: `MOCK-${dto.studentCode}`,
+        uid: `MOCK-${studentCode}`,
         chipType: 'MIFARE',
         status: 'active' as any,
       });
@@ -76,14 +100,31 @@ export class StudentsService {
 
       await queryRunner.commitTransaction();
       return savedStudent;
-    } catch (err) {
+    } catch (err: unknown) {
       await queryRunner.rollbackTransaction();
+      const driverError = (
+        err as {
+          driverError?: {
+            code?: string;
+            constraint?: string;
+          };
+        }
+      ).driverError;
+      if (driverError?.code === '23505') {
+        if (driverError.constraint === 'UQ_25985d58c714a4a427ced57507b') {
+          throw new ConflictException('Email đã tồn tại');
+        }
+        if (driverError.constraint === 'UQ_7f8186b57a1bbb3ae0db6bd6262') {
+          throw new ConflictException('Mã sinh viên đã tồn tại');
+        }
+        throw new ConflictException('Thông tin sinh viên đã tồn tại');
+      }
       throw err;
     } finally {
       await queryRunner.release();
     }
   }
-
+  //chức năng tìm kiếm sinh viên theo các tiêu chí: search, faculty, isActive
   async findAll(query: StudentQuery = {}): Promise<Student[]> {
     const { search, faculty, isActive } = query;
 

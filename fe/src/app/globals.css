@@ -148,7 +148,7 @@ html[data-theme="dark"] .sidebar-link.is-active { color: #ff8a97; }
 .sidebar-bottom { margin: 15px 14px; border-top: 1px solid var(--line); padding-top: 14px; }
 .sidebar-note { display: flex; gap: 9px; align-items: center; color: var(--muted); font-size: 11px; padding: 12px; }
 .sidebar-note small { display: block; font-size: 9px; margin-top: 5px; line-height: 1.6; }
-.admin-workspace { margin-left: 258px; min-width: 0; }
+.admin-workspace { margin-left: 258px; min-width: 0; min-height: 100svh; display: flex; flex-direction: column; }
 .app-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 86px; padding: 18px 32px; border-bottom: 1px solid var(--line); background: var(--surface); position: sticky; top: 0; z-index: 20; }
 .header-title, .header-actions { display: flex; align-items: center; gap: 12px; }
 .header-eyebrow { color: var(--muted); font-size: 9px; font-weight: 650; letter-spacing: 1.3px; }
@@ -156,7 +156,7 @@ html[data-theme="dark"] .sidebar-link.is-active { color: #ff8a97; }
 .header-user { display: flex; align-items: center; gap: 10px; padding-left: 16px; margin-left: 4px; border-left: 1px solid var(--line); }
 .header-user p { font-size: 12px; font-weight: 600; }.header-user small { font-size: 10px; color: var(--muted); }
 .user-avatar { display: grid; place-items: center; width: 37px; height: 37px; border-radius: 12px; background: var(--primary-light); color: #de4c5f; font-weight: 700; }
-.app-content { padding: 30px 32px 48px; max-width: 1600px; margin: auto; animation: content-arrive .3s ease both; }
+.app-content { width: 100%; padding: 30px 32px 48px; max-width: 1600px; margin: 0 auto; flex: 1; }
 .mobile-menu, .sidebar-close, .sidebar-backdrop { display: none; }
 .student-shell { min-height: 100svh; display: flex; flex-direction: column; background: var(--background); }
 .student-header { background: var(--surface); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 20; }
