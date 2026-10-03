@@ -11,26 +11,26 @@ export type AdminRole = 'admin' | 'super_admin';
 @Entity('admins')
 export class Admin {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id!: string;
 
   @Column({ unique: true, length: 50 })
-  username: string;
+  username!: string;
 
   @Column({ length: 255, select: false })
-  passwordHash: string;
+  passwordHash!: string;
 
   @Column({ length: 100 })
-  fullName: string;
+  fullName!: string;
 
   @Column({ type: 'varchar', length: 20, default: 'admin' })
-  role: AdminRole;
+  role!: AdminRole;
 
   @Column({ default: true })
-  isActive: boolean;
+  isActive!: boolean;
 
   @CreateDateColumn()
-  createdAt: Date;
+  createdAt!: Date;
 
   @UpdateDateColumn()
-  updatedAt: Date;
+  updatedAt!: Date;
 }
