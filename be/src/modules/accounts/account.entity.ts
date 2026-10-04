@@ -4,6 +4,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  DeleteDateColumn,
   ManyToOne,
   JoinColumn,
   OneToMany,
@@ -24,6 +25,9 @@ export enum AccountStatus {
   '"balance" >= 0 AND "dailySpent" >= 0 AND "dailyLimit" >= 0',
 )
 export class Account {
+  @DeleteDateColumn({ type: 'timestamptz', nullable: true })
+  deletedAt: Date | null;
+
   @PrimaryGeneratedColumn('uuid')
   id: string;
 

@@ -260,6 +260,7 @@ export class TransactionsService {
 
   async findAll(): Promise<Transaction[]> {
     return this.repo.find({
+      withDeleted: true,
       relations: { student: true, merchant: true },
       order: { createdAt: 'DESC' },
       take: 100,

@@ -1,8 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { normalizeUid } from '../../common/utils/payment';
 import { Card, CardStatus } from './card.entity';
+import { Student } from '../students/student.entity';
 
 @Injectable()
 export class CardsService {
@@ -12,7 +17,30 @@ export class CardsService {
   ) {}
 
   async create(data: Partial<Card>): Promise<Card> {
-    return this.repo.save({ ...data, uid: normalizeUid(data.uid!) });
+    try {
+      return await this.repo.manager.transaction(async (manager) => {
+        const studentId = data.studentId ?? data.student?.id;
+        if (!studentId) throw new NotFoundException('Không tìm thấy sinh viên');
+        const student = await manager.findOne(Student, {
+          where: { id: studentId },
+          lock: { mode: 'pessimistic_read' },
+        });
+        if (!student) throw new NotFoundException('Không tìm thấy sinh viên');
+        return manager.save(Card, {
+          ...data,
+          studentId,
+          uid: normalizeUid(data.uid!),
+        });
+      });
+    } catch (error) {
+      if (
+        (error as { driverError?: { code?: string } }).driverError?.code ===
+        '23505'
+      ) {
+        throw new ConflictException('UID thẻ đã tồn tại, kể cả thẻ đã lưu trữ');
+      }
+      throw error;
+    }
   }
 
   async findAll(): Promise<Card[]> {
