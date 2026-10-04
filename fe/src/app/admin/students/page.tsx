@@ -187,7 +187,7 @@ export default function AdminStudentsPage() {
     { key: 'faculty', header: 'Khoa' },
     { key: 'isActive', header: 'Trạng thái', render: (s) => (
       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${s.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-        {s.isActive ? 'Hoạt động' : 'Đã khoá'}
+        {s.isActive ? 'Hoạt động' : 'Ngừng hoạt động'}
       </span>
     )},
     { key: 'actions', header: '', render: (s) => (
@@ -198,10 +198,10 @@ export default function AdminStudentsPage() {
         <button onClick={() => openEdit(s)} className="p-1 text-amber-600 hover:text-amber-800 rounded hover:bg-amber-50" title="Sửa">
           <Pencil className="w-4 h-4" />
         </button>
-        <button onClick={() => handleToggle(s.id)} className="p-1 text-indigo-600 hover:text-indigo-800 rounded hover:bg-indigo-50" title={s.isActive ? 'Khoá' : 'Mở'}>
-          {s.isActive ? 'Khoá' : 'Mở'}
+        <button onClick={() => handleToggle(s.id)} className="px-2 py-1 text-xs font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded" title={s.isActive ? 'Ngừng hoạt động' : 'Kích hoạt lại'}>
+          {s.isActive ? 'Ngừng hoạt động' : 'Kích hoạt lại'}
         </button>
-        <button onClick={() => openDelete(s)} className="p-1 text-red-600 hover:text-red-800 rounded hover:bg-red-50" title="Xoá">
+        <button onClick={() => openDelete(s)} className="p-1 text-red-600 hover:text-red-800 rounded hover:bg-red-50" title="Xóa vĩnh viễn">
           <Trash2 className="w-4 h-4" />
         </button>
       </div>
@@ -366,16 +366,16 @@ export default function AdminStudentsPage() {
       {modalMode === 'delete' && selectedStudent && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
-            <h2 className="text-lg font-semibold text-red-600 mb-2">Xác nhận xoá</h2>
+            <h2 className="text-lg font-semibold text-red-600 mb-2">Xóa vĩnh viễn sinh viên</h2>
             <p className="text-gray-600 text-sm mb-6">
-              Bạn có chắc muốn xoá sinh viên <strong>{selectedStudent.fullName}</strong> ({selectedStudent.studentCode})? Hành động này không thể hoàn tác.
+              Xóa vĩnh viễn sinh viên <strong>{selectedStudent.fullName}</strong> ({selectedStudent.studentCode}), ví và tất cả thẻ liên quan? Thao tác này chỉ thực hiện được khi ví không còn số dư và sinh viên chưa có lịch sử giao dịch hoặc hồ sơ khớp nạp. Nếu cần giữ hồ sơ, hãy chọn “Ngừng hoạt động”.
             </p>
             {formError && <div className="text-red-600 text-sm mb-4">{formError}</div>}
             <div className="flex gap-3">
               <button type="button" onClick={closeModal} className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">Huỷ</button>
               <button type="button" onClick={handleDelete} disabled={submitting} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-60 flex items-center justify-center gap-2">
                 {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                {submitting ? 'Đang xoá...' : 'Xoá'}
+                {submitting ? 'Đang xóa...' : 'Xóa vĩnh viễn'}
               </button>
             </div>
           </div>
@@ -421,7 +421,7 @@ export default function AdminStudentsPage() {
                 <div>
                   <p className="text-xs text-gray-500">Trạng thái</p>
                   <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${selectedStudent.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                    {selectedStudent.isActive ? 'Hoạt động' : 'Đã khoá'}
+                    {selectedStudent.isActive ? 'Hoạt động' : 'Ngừng hoạt động'}
                   </span>
                 </div>
               </div>

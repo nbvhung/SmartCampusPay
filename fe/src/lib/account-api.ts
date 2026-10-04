@@ -12,4 +12,7 @@ export const accountApi = {
 
   toggleFreeze: (id: string) =>
     api.patch<ApiResponse<Account>>(`/accounts/${id}/freeze`),
+
+  remove: (id: string) =>
+    api.delete<ApiResponse<{ message: string }>>(`/accounts/${id}`),
 };

@@ -4,6 +4,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  DeleteDateColumn,
   ManyToOne,
   JoinColumn,
 } from 'typeorm';
@@ -18,6 +19,9 @@ export enum CardStatus {
 
 @Entity('cards')
 export class Card {
+  @DeleteDateColumn({ type: 'timestamptz', nullable: true })
+  deletedAt: Date | null;
+
   @PrimaryGeneratedColumn('uuid')
   id: string;
 

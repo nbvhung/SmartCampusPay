@@ -15,6 +15,7 @@ describe('AccountsService', () => {
 
   const createMockAccount = (overrides: Partial<Account> = {}): Account => ({
     id: 'account-uuid',
+    deletedAt: null,
     balance: 100000,
     dailyLimit: 500000,
     dailySpent: 0,

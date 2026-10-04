@@ -1,4 +1,12 @@
-import { Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  UseGuards,
+} from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { AccountsService } from './accounts.service';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -28,5 +36,11 @@ export class AccountsController {
   @Patch(':id/freeze')
   toggleFreeze(@Param('id') id: string) {
     return this.service.toggleFreeze(id);
+  }
+
+  @Delete(':id')
+  async remove(@Param('id', ParseUUIDPipe) id: string) {
+    await this.service.remove(id);
+    return { message: 'Đã xóa vĩnh viễn ví' };
   }
 }

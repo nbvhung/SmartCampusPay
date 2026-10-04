@@ -1,4 +1,6 @@
 import 'reflect-metadata';
+import { ArchiveStudentWallets1791043200000 } from '../src/database/migrations/1791043200000-ArchiveStudentWallets';
+import { RevealArchivedStudents1791129600000 } from '../src/database/migrations/1791129600000-RevealArchivedStudents';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
@@ -97,6 +99,8 @@ describe('Hardware payments with real PostgreSQL', () => {
         Initial1785125994312,
         HardenMoneyPath1790323200000,
         PrepareHardwareIntegration1790899200000,
+        ArchiveStudentWallets1791043200000,
+        RevealArchivedStudents1791129600000,
       ],
       synchronize: false,
     });
@@ -114,7 +118,11 @@ describe('Hardware payments with real PostgreSQL', () => {
       db,
     );
     sepay = new SePayService(
-      new ConfigService({ SEPAY_ACCOUNT_NUMBER: '123', SEPAY_WEBHOOK_ACCOUNT_NUMBER: '123', SEPAY_API_KEY: 'test' }),
+      new ConfigService({
+        SEPAY_ACCOUNT_NUMBER: '123',
+        SEPAY_WEBHOOK_ACCOUNT_NUMBER: '123',
+        SEPAY_API_KEY: 'test',
+      }),
       db,
       db.getRepository(Transaction),
       accounts,
@@ -202,24 +210,20 @@ describe('Hardware payments with real PostgreSQL', () => {
     await db.query(
       'TRUNCATE "topup_pendings", "transactions", "cards", "accounts", "students", "merchants" CASCADE',
     );
-    student = await db
-      .getRepository(Student)
-      .save({
-        studentCode: 'B23DCCN358',
-        fullName: 'Test Student',
-        email: 'test@example.test',
-        faculty: 'Test',
-        mustChangePassword: false,
-      });
-    account = await db
-      .getRepository(Account)
-      .save({
-        studentId: student.id,
-        balance: 100000,
-        dailyLimit: 500000,
-        dailySpent: 0,
-        dailySpentDate: campusDate(),
-      });
+    student = await db.getRepository(Student).save({
+      studentCode: 'B23DCCN358',
+      fullName: 'Test Student',
+      email: 'test@example.test',
+      faculty: 'Test',
+      mustChangePassword: false,
+    });
+    account = await db.getRepository(Account).save({
+      studentId: student.id,
+      balance: 100000,
+      dailyLimit: 500000,
+      dailySpent: 0,
+      dailySpentDate: campusDate(),
+    });
     merchant = await db
       .getRepository(Merchant)
       .save({ name: 'Test POS', apiKey: await bcrypt.hash(apiKey, 4) });
@@ -287,7 +291,9 @@ describe('Hardware payments with real PostgreSQL', () => {
   });
 
   it('upgrades an existing wallet without losing its daily counter', async () => {
-    await db.undoLastMigration();
+    await db.undoLastMigration(); // RevealArchivedStudents
+    await db.undoLastMigration(); // ArchiveStudentWallets
+    await db.undoLastMigration(); // PrepareHardwareIntegration
     await db.query('UPDATE accounts SET "dailySpent" = 1234');
     await db.query(`UPDATE cards SET uid = '00:a1:b2:c3'`);
     await db.runMigrations();

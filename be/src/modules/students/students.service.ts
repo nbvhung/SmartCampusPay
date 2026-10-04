@@ -12,6 +12,8 @@ import { Student } from './student.entity';
 import { Account } from '../accounts/account.entity';
 import { Card } from '../cards/card.entity';
 import { CardsService } from '../cards/cards.service';
+import { Transaction } from '../transactions/transaction.entity';
+import { TopupClaim } from '../topup-claims/topup-claim.entity';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { BulkImportResult, ImportStudentRow } from './dto/import-student.dto';
 
@@ -35,16 +37,17 @@ export class StudentsService {
     const email = dto.email.trim().toLowerCase();
 
     const codeExists = await this.repo.findOne({
+      withDeleted: true,
       where: {
-        studentCode: Raw(
-          (alias) => `UPPER(TRIM(${alias})) = :studentCode`,
-          { studentCode },
-        ),
+        studentCode: Raw((alias) => `UPPER(TRIM(${alias})) = :studentCode`, {
+          studentCode,
+        }),
       },
     });
     if (codeExists) throw new ConflictException('Mã sinh viên đã tồn tại');
 
     const emailExists = await this.repo.findOne({
+      withDeleted: true,
       where: {
         email: Raw((alias) => `LOWER(TRIM(${alias})) = :email`, { email }),
       },
@@ -187,6 +190,7 @@ export class StudentsService {
     const student = await this.findById(id);
     if (dto.studentCode && dto.studentCode !== student.studentCode) {
       const exists = await this.repo.findOne({
+        withDeleted: true,
         where: { studentCode: dto.studentCode },
       });
       if (exists) throw new ConflictException('Mã sinh viên đã tồn tại');
@@ -196,8 +200,43 @@ export class StudentsService {
   }
 
   async remove(id: string): Promise<void> {
-    const student = await this.findById(id);
-    await this.repo.remove(student);
+    await this.dataSource.transaction(async (manager) => {
+      // Match the payment lock order: student, cards, then wallets.
+      const student = await manager.findOne(Student, {
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!student) throw new NotFoundException('Không tìm thấy sinh viên');
+      await manager
+        .createQueryBuilder(Card, 'card')
+        .where('card.studentId = :id', { id })
+        .orderBy('card.id')
+        .setLock('pessimistic_write')
+        .getMany();
+      const accounts = await manager
+        .createQueryBuilder(Account, 'account')
+        .where('account.studentId = :id', { id })
+        .orderBy('account.id')
+        .setLock('pessimistic_write')
+        .getMany();
+      if (accounts.some((account) => account.balance !== 0)) {
+        throw new ConflictException(
+          'Không thể xóa vĩnh viễn vì sinh viên còn số dư trong ví',
+        );
+      }
+      const [transactionCount, claimCount] = await Promise.all([
+        manager.count(Transaction, { where: { studentId: id } }),
+        manager.count(TopupClaim, { where: { studentId: id } }),
+      ]);
+      if (transactionCount > 0 || claimCount > 0) {
+        throw new ConflictException(
+          'Sinh viên đã có lịch sử giao dịch hoặc hồ sơ khớp nạp. Hãy dùng “Ngừng hoạt động” để giữ dữ liệu đối soát',
+        );
+      }
+      await manager.delete(Card, { studentId: id });
+      await manager.delete(Account, { studentId: id });
+      await manager.delete(Student, id);
+    });
   }
 
   // ─── BULK IMPORT TỪ FILE EXCEL ─────────────────────────────────────────────
@@ -249,6 +288,7 @@ export class StudentsService {
 
       try {
         const exists = await queryRunner.manager.findOne(Student, {
+          withDeleted: true,
           where: { studentCode: row.studentCode },
         });
         if (exists) {

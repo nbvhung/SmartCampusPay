@@ -1,3 +1,5 @@
+import { ArchiveStudentWallets1791043200000 } from '../src/database/migrations/1791043200000-ArchiveStudentWallets';
+import { RevealArchivedStudents1791129600000 } from '../src/database/migrations/1791129600000-RevealArchivedStudents';
 import 'reflect-metadata';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -11,6 +13,12 @@ import { config } from 'dotenv';
 import { Student } from '../src/modules/students/student.entity';
 import { Card } from '../src/modules/cards/card.entity';
 import { Account, AccountStatus } from '../src/modules/accounts/account.entity';
+import { AccountsService } from '../src/modules/accounts/accounts.service';
+import { AccountsController } from '../src/modules/accounts/accounts.controller';
+import { StudentsService } from '../src/modules/students/students.service';
+import { StudentsController } from '../src/modules/students/students.controller';
+import { CardsService } from '../src/modules/cards/cards.service';
+import { AuthService } from '../src/modules/auth/auth.service';
 import { Merchant } from '../src/modules/merchants/merchant.entity';
 import { Transaction } from '../src/modules/transactions/transaction.entity';
 import { Admin } from '../src/modules/admins/admin.entity';
@@ -57,6 +65,9 @@ describe('Student top-up claims with PostgreSQL', () => {
   let adminToken: string;
   let pending: TopupPendingService;
   let claims: TopupClaimsService;
+  let accounts: AccountsService;
+  let studentsService: StudentsService;
+  let cardsService: CardsService;
 
   beforeAll(async () => {
     const connection = {
@@ -94,6 +105,8 @@ describe('Student top-up claims with PostgreSQL', () => {
         HardenMoneyPath1790323200000,
         PrepareHardwareIntegration1790899200000,
         AddTopupClaims1790956800000,
+        ArchiveStudentWallets1791043200000,
+        RevealArchivedStudents1791129600000,
       ],
       synchronize: false,
     });
@@ -102,10 +115,24 @@ describe('Student top-up claims with PostgreSQL', () => {
     await db.runMigrations();
     pending = new TopupPendingService(db.getRepository(TopupPending), db);
     claims = new TopupClaimsService(db.getRepository(TopupClaim), db, pending);
+    accounts = new AccountsService(db.getRepository(Account));
+    cardsService = new CardsService(db.getRepository(Card));
+    studentsService = new StudentsService(
+      db.getRepository(Student),
+      db,
+      cardsService,
+    );
     const module = await Test.createTestingModule({
-      controllers: [TopupClaimsController, TopupPendingController],
+      controllers: [
+        TopupClaimsController,
+        TopupPendingController,
+        AccountsController,
+        StudentsController,
+      ],
       providers: [
         RolesGuard,
+        { provide: AccountsService, useValue: accounts },
+        { provide: StudentsService, useValue: studentsService },
         { provide: TopupClaimsService, useValue: claims },
         { provide: TopupPendingService, useValue: pending },
         {
@@ -167,13 +194,11 @@ describe('Student top-up claims with PostgreSQL', () => {
       { studentId: student.id, balance: 100000 },
       { studentId: otherStudent.id, balance: 0 },
     ]);
-    admin = await db
-      .getRepository(Admin)
-      .save({
-        username: 'test-admin',
-        fullName: 'Test Admin',
-        passwordHash: 'unused',
-      });
+    admin = await db.getRepository(Admin).save({
+      username: 'test-admin',
+      fullName: 'Test Admin',
+      passwordHash: 'unused',
+    });
     const jwt = new JwtService({ secret: 'claims-integration-secret' });
     studentToken = jwt.sign({ sub: student.id, role: 'student' });
     otherToken = jwt.sign({ sub: otherStudent.id, role: 'student' });
@@ -431,5 +456,178 @@ describe('Student top-up claims with PostgreSQL', () => {
     await match(body.data.id, (await transfer()).id).expect(409);
     await submit().expect(201);
     expect(await balance()).toBe(100000);
+  });
+
+  const remove = (resource: string, id: string, token = adminToken) =>
+    request(app.getHttpServer())
+      .delete(`/api/v1/${resource}/${id}`)
+      .auth(token, { type: 'bearer' });
+
+  it('keeps inactive students visible and blocks hard deletion when financial evidence exists', async () => {
+    const { body } = await submit().expect(201);
+    await match(body.data.id, (await transfer()).id).expect(201);
+    // Represent a wallet whose funds have subsequently been settled.
+    await db
+      .getRepository(Account)
+      .update({ studentId: student.id }, { balance: 0 });
+    await request(app.getHttpServer())
+      .patch(`/api/v1/students/${student.id}/toggle`)
+      .auth(adminToken, { type: 'bearer' })
+      .expect(200);
+    await remove('students', student.id).expect(409);
+    expect((await studentsService.findById(student.id)).isActive).toBe(false);
+    expect(
+      (await studentsService.findAll()).some((item) => item.id === student.id),
+    ).toBe(true);
+    expect(
+      await db.getRepository(Account).countBy({ studentId: student.id }),
+    ).toBe(1);
+    expect(
+      await db.getRepository(Card).countBy({ studentId: student.id }),
+    ).toBe(1);
+    expect(await db.getRepository(Transaction).count()).toBe(1);
+    expect((await claims.detail(body.data.id)).status).toBe('matched');
+    expect(
+      await db.getRepository(Student).countBy({ id: otherStudent.id }),
+    ).toBe(1);
+    await request(app.getHttpServer())
+      .get('/api/v1/topup-claims/mine')
+      .auth(studentToken, { type: 'bearer' })
+      .expect(401);
+    await request(app.getHttpServer())
+      .patch(`/api/v1/students/${student.id}/toggle`)
+      .auth(adminToken, { type: 'bearer' })
+      .expect(200);
+    expect((await studentsService.findById(student.id)).isActive).toBe(true);
+  });
+
+  it('hard-deletes a zero-balance wallet without history and permits a new wallet', async () => {
+    const wallet = await accounts.findByStudentId(otherStudent.id);
+    await remove('accounts', wallet.id).expect(200);
+    expect(
+      await db.getRepository(Student).countBy({ id: otherStudent.id }),
+    ).toBe(1);
+    expect(
+      await db.getRepository(Card).countBy({ studentId: otherStudent.id }),
+    ).toBe(1);
+    await expect(
+      accounts.findByStudentId(otherStudent.id),
+    ).rejects.toMatchObject({ status: 404 });
+    const replacement = await accounts.createAccountIfNotExists(
+      otherStudent.id,
+    );
+    expect(replacement.id).not.toBe(wallet.id);
+    await remove('accounts', wallet.id).expect(404);
+    await remove('accounts', replacement.id).expect(200);
+    await remove('students', otherStudent.id).expect(200);
+    expect(
+      await db.getRepository(Student).countBy({ id: otherStudent.id }),
+    ).toBe(0);
+    expect(
+      await db.getRepository(Card).countBy({ studentId: otherStudent.id }),
+    ).toBe(0);
+  });
+
+  it('rejects deleting nonzero balances without partially deleting children', async () => {
+    const wallet = await accounts.findByStudentId(student.id);
+    await remove('accounts', wallet.id).expect(409);
+    await remove('students', student.id).expect(409);
+    expect(await balance()).toBe(100000);
+    expect(
+      await db
+        .getRepository(Student)
+        .countBy({ id: student.id, isActive: true }),
+    ).toBe(1);
+    expect(
+      await db.getRepository(Card).countBy({ studentId: student.id }),
+    ).toBe(1);
+  });
+
+  it('validates delete IDs and enforces admin access', async () => {
+    const wallet = await accounts.findByStudentId(otherStudent.id);
+    for (const [resource, id] of [
+      ['students', otherStudent.id],
+      ['accounts', wallet.id],
+    ]) {
+      await request(app.getHttpServer())
+        .delete(`/api/v1/${resource}/${id}`)
+        .expect(401);
+      await remove(resource, id, studentToken).expect(403);
+      await remove(resource, 'bad-id').expect(400);
+      await remove(resource, '00000000-0000-4000-8000-000000000000').expect(
+        404,
+      );
+    }
+  });
+
+  it('rolls back all child deletions if deleting the student fails', async () => {
+    await db.query(
+      `CREATE FUNCTION reject_archive() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test rollback'; END $$`,
+    );
+    await db.query(
+      `CREATE TRIGGER reject_archive BEFORE DELETE ON students FOR EACH ROW EXECUTE FUNCTION reject_archive()`,
+    );
+    try {
+      await expect(studentsService.remove(otherStudent.id)).rejects.toThrow(
+        'test rollback',
+      );
+      expect((await accounts.findByStudentId(otherStudent.id)).status).toBe(
+        'active',
+      );
+      expect(
+        (await cardsService.findByStudentId(otherStudent.id))[0].status,
+      ).toBe('active');
+      expect((await studentsService.findById(otherStudent.id)).isActive).toBe(
+        true,
+      );
+    } finally {
+      await db.query('DROP TRIGGER reject_archive ON students');
+      await db.query('DROP FUNCTION reject_archive()');
+    }
+  });
+
+  it('waits for an in-flight balance update before deciding whether a wallet can be deleted', async () => {
+    const wallet = await accounts.findByStudentId(otherStudent.id);
+    const runner = db.createQueryRunner();
+    await runner.connect();
+    await runner.startTransaction();
+    let deletion: Promise<unknown> | undefined;
+    try {
+      await runner.manager.findOne(Account, {
+        where: { id: wallet.id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      deletion = accounts.remove(wallet.id).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      await runner.manager.update(Account, wallet.id, { balance: 50000 });
+      await runner.commitTransaction();
+      expect(await deletion).toMatchObject({ status: 409 });
+      expect((await accounts.findByStudentId(otherStudent.id)).balance).toBe(
+        50000,
+      );
+    } finally {
+      if (runner.isTransactionActive) await runner.rollbackTransaction();
+      await runner.release();
+      if (deletion) await deletion;
+    }
+  });
+
+  it('rejects refresh tokens belonging to inactive students', async () => {
+    await studentsService.toggleActive(otherStudent.id);
+    const jwt = new JwtService({ secret: 'refresh-test' });
+    const auth = new AuthService(
+      jwt,
+      new ConfigService({ JWT_REFRESH_SECRET: 'refresh-test' }),
+      {} as any,
+      {} as any,
+      accounts,
+      cardsService,
+      db.getRepository(Student),
+    );
+    await expect(
+      auth.refresh(jwt.sign({ sub: otherStudent.id, role: 'student' })),
+    ).rejects.toMatchObject({ status: 401 });
   });
 });

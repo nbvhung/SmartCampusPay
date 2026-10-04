@@ -4,6 +4,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  DeleteDateColumn,
   OneToMany,
 } from 'typeorm';
 import { Card } from '../cards/card.entity';
@@ -12,6 +13,9 @@ import { Transaction } from '../transactions/transaction.entity';
 
 @Entity('students')
 export class Student {
+  @DeleteDateColumn({ type: 'timestamptz', nullable: true })
+  deletedAt: Date | null;
+
   @PrimaryGeneratedColumn('uuid')
   id: string;
 

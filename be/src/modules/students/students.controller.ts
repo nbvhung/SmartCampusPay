@@ -13,6 +13,7 @@ import {
   ParseFilePipe,
   MaxFileSizeValidator,
   FileTypeValidator,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthGuard } from '@nestjs/passport';
@@ -57,9 +58,9 @@ export class StudentsController {
   }
 
   @Delete(':id')
-  async remove(@Param('id') id: string) {
+  async remove(@Param('id', ParseUUIDPipe) id: string) {
     await this.service.remove(id);
-    return { message: 'Xoá sinh viên thành công' };
+    return { message: 'Đã xóa vĩnh viễn sinh viên, ví và thẻ liên quan' };
   }
 
   @Patch(':id/toggle')

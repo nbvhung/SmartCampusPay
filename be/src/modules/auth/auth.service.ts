@@ -14,6 +14,7 @@ import { Admin } from '../admins/admin.entity';
 import { AdminsService } from '../admins/admins.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { CardsService } from '../cards/cards.service';
+import { Card } from '../cards/card.entity';
 import { RedisService } from '../redis/redis.service';
 
 const ACCESS_TTL_SEC = 15 * 60; // 15 phút
@@ -58,20 +59,32 @@ export class AuthService {
       throw new UnauthorizedException('Mã sinh viên hoặc mật khẩu không đúng');
 
     // Tự động tạo account nếu chưa có
-    await this.accountsService.createAccountIfNotExists(student.id);
+    // An archived wallet must stay archived when its owner logs in.
+    await this.accountsService.createAccountIfNotExists(student.id, true);
 
     // Tự động tạo thẻ ảo nếu chưa có (cho SV cũ)
-    const existingCards = await this.studentRepo.manager.query(
-      `SELECT id FROM cards WHERE "studentId" = $1 LIMIT 1`,
-      [student.id],
-    );
-    if (existingCards.length === 0) {
-      await this.studentRepo.manager.query(
-        `INSERT INTO cards (id, uid, "chipType", status, "studentId", "createdAt", "updatedAt")
-         VALUES (gen_random_uuid(), $1, 'MIFARE', 'active', $2, NOW(), NOW())`,
-        [`MOCK-${student.studentCode}`, student.id],
-      );
-    }
+    await this.studentRepo.manager.transaction(async (manager) => {
+      const currentStudent = await manager.findOne(Student, {
+        where: { id: student.id, isActive: true },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!currentStudent)
+        throw new UnauthorizedException('Sinh viên đã ngừng hoạt động');
+      const existingCard = await manager.findOne(Card, {
+        where: { studentId: student.id },
+        withDeleted: true,
+      });
+      if (!existingCard) {
+        await manager.save(
+          Card,
+          manager.create(Card, {
+            uid: `MOCK-${student.studentCode}`,
+            studentId: student.id,
+            chipType: 'MIFARE',
+          }),
+        );
+      }
+    });
 
     const { accessToken, refreshToken } = await this.issueTokenPair(
       student.id,
@@ -208,6 +221,14 @@ export class AuthService {
     }
 
     const userId = payload.sub;
+    if (payload.role === 'student') {
+      const student = await this.studentRepo.findOneBy({
+        id: userId,
+        isActive: true,
+      });
+      if (!student)
+        throw new UnauthorizedException('Sinh viên đã ngừng hoạt động');
+    }
     const storedHash = await this.redis.get(`refresh_token:${userId}`);
     if (!storedHash) {
       throw new UnauthorizedException(
