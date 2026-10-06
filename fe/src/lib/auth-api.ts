@@ -1,5 +1,5 @@
 import api from './axios';
-import type { AuthUser, LoginResponse } from '../types/auth';
+import type { AuthUser, LoginResponse, RegistrationOtpResponse, RegistrationResult } from '../types/auth';
 import type { Account, Card } from '../types';
 
 export const authApi = {
@@ -10,6 +10,12 @@ export const authApi = {
     api.post<{ success: boolean; data: LoginResponse }>('/auth/login', { studentCode, password }),
   adminLogin: (username: string, password: string) =>
     api.post<{ success: boolean; data: LoginResponse }>('/auth/admin/login', { username, password }),
+
+  requestRegistrationOtp: (studentCode: string, phone: string) =>
+    api.post<{ success: boolean; data: RegistrationOtpResponse }>('/auth/register/request-otp', { studentCode, phone }),
+
+  verifyRegistration: (registrationId: string, otp: string) =>
+    api.post<{ success: boolean; data: RegistrationResult }>('/auth/register/verify', { registrationId, otp }),
 
   /**
    * Làm mới access token (refresh_token đọc từ httpOnly cookie)

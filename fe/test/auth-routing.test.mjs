@@ -45,3 +45,9 @@ test('active sessions skip login; unknown roles are rejected', () => {
   assert.equal(destination(invalid), '/login');
   assert.match(invalid.headers.get('set-cookie'), /access_token=;/);
 });
+
+test('registration is public for anonymous students and skipped by active sessions', () => {
+  assert.equal(response('/register').status, 200);
+  assert.equal(destination(response('/register', { role: 'student' })), '/student/dashboard');
+  assert.equal(destination(response('/register', { role: 'admin' })), '/admin/dashboard');
+});

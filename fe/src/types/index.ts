@@ -3,6 +3,8 @@ export type {
   StudentUser,
   AdminUser,
   LoginResponse,
+  RegistrationOtpResponse,
+  RegistrationResult,
   AuthState,
   UserRole,
 } from "./auth";
@@ -25,10 +27,10 @@ export interface Student {
   studentCode: string;
   fullName: string | null;
   email: string | null;
-  phone?: string;
+  phone?: string | null;
   faculty: string | null;
   isActive: boolean;
-  dateOfBirth?: string;
+  dateOfBirth?: string | null;
   mustChangePassword: boolean;
   registeredAt: string | null;
   profileCompletedAt: string | null;

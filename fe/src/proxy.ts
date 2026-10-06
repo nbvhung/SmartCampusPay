@@ -10,7 +10,7 @@ interface JwtPayload {
 
 const PROTECTED_STUDENT = ['/student'];
 const PROTECTED_ADMIN = ['/admin'];
-const AUTH_ROUTES = ['/login', '/login/student', '/login/admin', '/change-password'];
+const AUTH_ROUTES = ['/login', '/login/student', '/login/admin', '/register', '/change-password'];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -67,6 +67,6 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/student/:path*', '/admin/:path*', '/login/:path*', '/change-password',
+    '/student/:path*', '/admin/:path*', '/login/:path*', '/register/:path*', '/change-password',
   ],
 };

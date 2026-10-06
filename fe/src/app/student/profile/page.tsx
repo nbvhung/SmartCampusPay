@@ -83,15 +83,15 @@ export default function StudentProfilePage() {
               </div>
               <div>
                 <label className="text-xs text-gray-500">Họ tên</label>
-                <p className="font-medium text-gray-900">{student.fullName}</p>
+                <p className="font-medium text-gray-900">{student.fullName || 'Chưa cập nhật'}</p>
               </div>
               <div>
                 <label className="text-xs text-gray-500">Email</label>
-                <p className="font-medium text-gray-900 break-all">{student.email}</p>
+                <p className="font-medium text-gray-900 break-all">{student.email || 'Chưa cập nhật'}</p>
               </div>
               <div>
                 <label className="text-xs text-gray-500">Khoa</label>
-                <p className="font-medium text-gray-900">{student.faculty}</p>
+                <p className="font-medium text-gray-900">{student.faculty || 'Chưa cập nhật'}</p>
               </div>
               <div>
                 <label className="text-xs text-gray-500">Số điện thoại</label>
