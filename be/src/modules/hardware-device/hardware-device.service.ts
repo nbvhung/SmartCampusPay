@@ -27,7 +27,7 @@ export class HardwareDeviceService {
 
   async getStudentByUid(uid: string): Promise<{
     studentCode: string;
-    fullName: string;
+    fullName: string | null;
   }> {
     const card = await this.cardsService.findByUid(uid);
     if (card.status !== CardStatus.ACTIVE) {
@@ -42,7 +42,7 @@ export class HardwareDeviceService {
 
   async getBalanceByUid(uid: string): Promise<{
     studentCode: string;
-    fullName: string;
+    fullName: string | null;
     balance: number;
   }> {
     const card = await this.cardsService.findByUid(uid);

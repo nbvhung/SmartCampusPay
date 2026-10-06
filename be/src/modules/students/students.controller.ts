@@ -90,7 +90,7 @@ export class StudentsController {
   /**
    * POST /api/v1/students/import
    * Upload file Excel để import danh sách sinh viên hàng loạt
-   * File .xlsx với các cột: MSV | Họ tên | Email | Điện thoại | Khoa | Ngày sinh (dd/mm/yyyy)
+   * File .xlsx với các cột: MSSV | UID thẻ vật lý
    */
   @Post('import')
   @UseInterceptors(FileInterceptor('file'))

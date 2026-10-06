@@ -1,5 +1,6 @@
 import { ArchiveStudentWallets1791043200000 } from '../src/database/migrations/1791043200000-ArchiveStudentWallets';
 import { RevealArchivedStudents1791129600000 } from '../src/database/migrations/1791129600000-RevealArchivedStudents';
+import { StudentOnboarding1791216000000 } from '../src/database/migrations/1791216000000-StudentOnboarding';
 import 'reflect-metadata';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -107,6 +108,7 @@ describe('Student top-up claims with PostgreSQL', () => {
         AddTopupClaims1790956800000,
         ArchiveStudentWallets1791043200000,
         RevealArchivedStudents1791129600000,
+        StudentOnboarding1791216000000,
       ],
       synchronize: false,
     });
@@ -117,11 +119,7 @@ describe('Student top-up claims with PostgreSQL', () => {
     claims = new TopupClaimsService(db.getRepository(TopupClaim), db, pending);
     accounts = new AccountsService(db.getRepository(Account));
     cardsService = new CardsService(db.getRepository(Card));
-    studentsService = new StudentsService(
-      db.getRepository(Student),
-      db,
-      cardsService,
-    );
+    studentsService = new StudentsService(db.getRepository(Student), db);
     const module = await Test.createTestingModule({
       controllers: [
         TopupClaimsController,
