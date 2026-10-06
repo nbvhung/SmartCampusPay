@@ -11,6 +11,9 @@ import { AdminsModule } from '../admins/admins.module';
 import { AccountsModule } from '../accounts/accounts.module';
 import { CardsModule } from '../cards/cards.module';
 import { RedisModule } from '../redis/redis.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { RegistrationOtpService } from './registration-otp.service';
+import { RegistrationOtpStore } from './registration-otp.store';
 
 @Module({
   imports: [
@@ -20,6 +23,7 @@ import { RedisModule } from '../redis/redis.module';
     AccountsModule,
     CardsModule,
     RedisModule,
+    NotificationsModule,
     // JwtModule dùng cho access token (sign/verify trong service dùng config trực tiếp)
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -31,7 +35,12 @@ import { RedisModule } from '../redis/redis.module';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
-  exports: [AuthService],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    RegistrationOtpStore,
+    RegistrationOtpService,
+  ],
+  exports: [AuthService, RegistrationOtpService],
 })
 export class AuthModule {}
