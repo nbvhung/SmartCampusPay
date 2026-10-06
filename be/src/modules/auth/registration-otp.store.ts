@@ -66,6 +66,7 @@ if challenge.status ~= 'pending' or challenge.otpDigest ~= ARGV[1] then
 end
 challenge.status = 'verified'
 challenge.verifiedAt = tonumber(ARGV[2])
+challenge.verifiedDigest = challenge.otpDigest
 challenge.otpDigest = nil
 local encoded = cjson.encode(challenge)
 redis.call('SET', KEYS[1], encoded, 'KEEPTTL')
@@ -88,6 +89,31 @@ end
 redis.call('SET', KEYS[1], cjson.encode(challenge), 'KEEPTTL')
 if challenge.status == 'exhausted' then return {'EXHAUSTED', '0'} end
 return {'INCORRECT', tostring(challenge.attemptsRemaining)}
+`;
+
+const CONSUME_VERIFIED_SCRIPT = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 'MISSING' end
+local challenge = cjson.decode(raw)
+if challenge.status ~= 'verified' then return 'NOT_VERIFIED' end
+redis.call('DEL', KEYS[1])
+return 'CONSUMED'
+`;
+
+const RELEASE_VERIFIED_SCRIPT = `
+local raw = redis.call('GET', KEYS[1])
+if not raw then return 'MISSING' end
+local challenge = cjson.decode(raw)
+if challenge.status == 'pending' then return 'ALREADY_PENDING' end
+if challenge.status ~= 'verified' or not challenge.verifiedDigest then
+  return 'NOT_VERIFIED'
+end
+challenge.status = 'pending'
+challenge.otpDigest = challenge.verifiedDigest
+challenge.verifiedDigest = nil
+challenge.verifiedAt = nil
+redis.call('SET', KEYS[1], cjson.encode(challenge), 'KEEPTTL')
+return 'RELEASED'
 `;
 
 const DISCARD_SCRIPT = `
@@ -141,6 +167,9 @@ export interface VerifyTransitionResult {
   challenge?: RegistrationOtpChallenge;
   attemptsRemaining?: number;
 }
+
+export type FinalizeChallengeState =
+  'CONSUMED' | 'RELEASED' | 'ALREADY_PENDING' | 'NOT_VERIFIED' | 'MISSING';
 
 @Injectable()
 export class RegistrationOtpStore {
@@ -242,6 +271,34 @@ export class RegistrationOtpStore {
       state: state as VerifyTransitionState,
       attemptsRemaining: Number(attemptsRemaining),
     };
+  }
+
+  async consumeVerified(
+    prefix: string,
+    registrationId: string,
+  ): Promise<FinalizeChallengeState> {
+    const result = await this.redis
+      .getClient()
+      .eval(
+        CONSUME_VERIFIED_SCRIPT,
+        1,
+        this.challengeKey(prefix, registrationId),
+      );
+    return String(result) as FinalizeChallengeState;
+  }
+
+  async releaseVerified(
+    prefix: string,
+    registrationId: string,
+  ): Promise<FinalizeChallengeState> {
+    const result = await this.redis
+      .getClient()
+      .eval(
+        RELEASE_VERIFIED_SCRIPT,
+        1,
+        this.challengeKey(prefix, registrationId),
+      );
+    return String(result) as FinalizeChallengeState;
   }
 
   async discardChallenge(

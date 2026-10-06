@@ -8,20 +8,17 @@ import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { Student } from '../students/student.entity';
 import { AdminsModule } from '../admins/admins.module';
-import { AccountsModule } from '../accounts/accounts.module';
-import { CardsModule } from '../cards/cards.module';
 import { RedisModule } from '../redis/redis.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { RegistrationOtpService } from './registration-otp.service';
 import { RegistrationOtpStore } from './registration-otp.store';
+import { RegistrationService } from './registration.service';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Student]),
     PassportModule,
     AdminsModule,
-    AccountsModule,
-    CardsModule,
     RedisModule,
     NotificationsModule,
     // JwtModule dùng cho access token (sign/verify trong service dùng config trực tiếp)
@@ -40,6 +37,7 @@ import { RegistrationOtpStore } from './registration-otp.store';
     JwtStrategy,
     RegistrationOtpStore,
     RegistrationOtpService,
+    RegistrationService,
   ],
   exports: [AuthService, RegistrationOtpService],
 })

@@ -11,6 +11,7 @@ export interface RegistrationOtpChallenge {
   resendAvailableAt: number;
   status: RegistrationOtpStatus;
   verifiedAt?: number;
+  verifiedDigest?: string;
 }
 
 export interface RequestRegistrationOtpInput {

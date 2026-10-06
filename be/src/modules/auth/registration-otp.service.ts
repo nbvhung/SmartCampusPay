@@ -140,6 +140,44 @@ export class RegistrationOtpService {
     };
   }
 
+  async consumeVerifiedOtp(registrationId: string): Promise<void> {
+    const normalizedRegistrationId =
+      this.normalizeRegistrationId(registrationId);
+    const state = await this.redisOperation(() =>
+      this.store.consumeVerified(
+        this.settings.redisPrefix,
+        normalizedRegistrationId,
+      ),
+    );
+    if (state === 'CONSUMED' || state === 'MISSING') return;
+    throw new ConflictException({
+      code: 'OTP_NOT_VERIFIED',
+      message: 'OTP chưa được xác minh',
+    });
+  }
+
+  async releaseVerifiedOtp(registrationId: string): Promise<void> {
+    const normalizedRegistrationId =
+      this.normalizeRegistrationId(registrationId);
+    const state = await this.redisOperation(() =>
+      this.store.releaseVerified(
+        this.settings.redisPrefix,
+        normalizedRegistrationId,
+      ),
+    );
+    if (
+      state === 'RELEASED' ||
+      state === 'ALREADY_PENDING' ||
+      state === 'MISSING'
+    ) {
+      return;
+    }
+    throw new ConflictException({
+      code: 'OTP_NOT_VERIFIED',
+      message: 'OTP chưa được xác minh',
+    });
+  }
+
   private async issueOtp(
     input: RequestRegistrationOtpInput,
     expectedActiveId?: string,
