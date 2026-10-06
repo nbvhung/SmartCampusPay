@@ -6,16 +6,15 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, Raw } from 'typeorm';
-import * as bcrypt from 'bcryptjs';
 import * as ExcelJS from 'exceljs';
 import { Student } from './student.entity';
 import { Account } from '../accounts/account.entity';
-import { Card } from '../cards/card.entity';
-import { CardsService } from '../cards/cards.service';
+import { Card, CardStatus } from '../cards/card.entity';
 import { Transaction } from '../transactions/transaction.entity';
 import { TopupClaim } from '../topup-claims/topup-claim.entity';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { BulkImportResult, ImportStudentRow } from './dto/import-student.dto';
+import { normalizeUid } from '../../common/utils/payment';
 
 interface StudentQuery {
   search?: string;
@@ -29,102 +28,85 @@ export class StudentsService {
     @InjectRepository(Student)
     private readonly repo: Repository<Student>,
     private readonly dataSource: DataSource,
-    private readonly cardsService: CardsService,
   ) {}
 
   async create(dto: CreateStudentDto): Promise<Student> {
     const studentCode = dto.studentCode.trim().toUpperCase();
-    const email = dto.email.trim().toLowerCase();
-
-    const codeExists = await this.repo.findOne({
-      withDeleted: true,
-      where: {
-        studentCode: Raw((alias) => `UPPER(TRIM(${alias})) = :studentCode`, {
-          studentCode,
-        }),
-      },
-    });
-    if (codeExists) throw new ConflictException('Mã sinh viên đã tồn tại');
-
-    const emailExists = await this.repo.findOne({
-      withDeleted: true,
-      where: {
-        email: Raw((alias) => `LOWER(TRIM(${alias})) = :email`, { email }),
-      },
-    });
-    if (emailExists) throw new ConflictException('Email đã tồn tại');
-
-    const normalizedDto: CreateStudentDto = {
-      ...dto,
-      studentCode,
-      fullName: dto.fullName.trim(),
-      email,
-      phone: dto.phone?.trim() || undefined,
-      faculty: dto.faculty?.trim() || undefined,
-    };
-
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
+    if (!studentCode) {
+      throw new BadRequestException('Mã sinh viên không được để trống');
+    }
+    const cardUid = this.normalizePhysicalCardUid(dto.cardUid);
 
     try {
-      const student = queryRunner.manager.create(
-        Student,
-        normalizedDto as Partial<Student>,
-      );
+      return await this.dataSource.transaction(async (manager) => {
+        const codeExists = await manager.findOne(Student, {
+          withDeleted: true,
+          where: {
+            studentCode: Raw(
+              (alias) => `UPPER(TRIM(${alias})) = :studentCode`,
+              { studentCode },
+            ),
+          },
+        });
+        if (codeExists) {
+          throw new ConflictException('Mã sinh viên đã tồn tại');
+        }
 
-      // Nếu có dateOfBirth thì sinh password mặc định ddmmyyyy
-      if (normalizedDto.dateOfBirth) {
-        const dob = new Date(normalizedDto.dateOfBirth);
-        const defaultPassword = this.formatDobPassword(dob);
-        student.passwordHash = await bcrypt.hash(defaultPassword, 10);
-        student.mustChangePassword = true;
-      }
+        const cardExists = await manager.findOne(Card, {
+          withDeleted: true,
+          where: { uid: cardUid },
+        });
+        if (cardExists) {
+          throw new ConflictException(
+            'UID thẻ đã tồn tại, kể cả thẻ đã lưu trữ',
+          );
+        }
 
-      const savedStudent = await queryRunner.manager.save(student);
+        const student = manager.create(Student, {
+          studentCode,
+          fullName: null,
+          email: null,
+          faculty: null,
+          isActive: true,
+          mustChangePassword: true,
+        });
+        const savedStudent = await manager.save(student);
 
-      // Tạo tài khoản cho sinh viên
-      const account = queryRunner.manager.create(Account, {
-        studentId: savedStudent.id,
-        balance: 0,
-        dailyLimit: 500000,
-        dailySpent: 0,
+        await manager.save(
+          manager.create(Card, {
+            studentId: savedStudent.id,
+            uid: cardUid,
+            chipType: 'MIFARE',
+            status: CardStatus.ACTIVE,
+          }),
+        );
+
+        return savedStudent;
       });
-      await queryRunner.manager.save(account);
-
-      // Tạo thẻ ảo cho sinh viên
-      const card = queryRunner.manager.create(Card, {
-        studentId: savedStudent.id,
-        uid: `MOCK-${studentCode}`,
-        chipType: 'MIFARE',
-        status: 'active' as any,
-      });
-      await queryRunner.manager.save(card);
-
-      await queryRunner.commitTransaction();
-      return savedStudent;
     } catch (err: unknown) {
-      await queryRunner.rollbackTransaction();
+      if (
+        err instanceof ConflictException ||
+        err instanceof BadRequestException
+      ) {
+        throw err;
+      }
       const driverError = (
         err as {
-          driverError?: {
-            code?: string;
-            constraint?: string;
-          };
+          driverError?: { code?: string; constraint?: string };
         }
       ).driverError;
       if (driverError?.code === '23505') {
-        if (driverError.constraint === 'UQ_25985d58c714a4a427ced57507b') {
-          throw new ConflictException('Email đã tồn tại');
-        }
         if (driverError.constraint === 'UQ_7f8186b57a1bbb3ae0db6bd6262') {
           throw new ConflictException('Mã sinh viên đã tồn tại');
         }
-        throw new ConflictException('Thông tin sinh viên đã tồn tại');
+        if (driverError.constraint === 'UQ_710a28e78c2bc8acd03cdb1a5f7') {
+          throw new ConflictException(
+            'UID thẻ đã tồn tại, kể cả thẻ đã lưu trữ',
+          );
+        }
+        throw new ConflictException('Thông tin provisioning đã tồn tại');
       }
       throw err;
-    } finally {
-      await queryRunner.release();
     }
   }
   //chức năng tìm kiếm sinh viên theo các tiêu chí: search, faculty, isActive
@@ -253,98 +235,42 @@ export class StudentsService {
     sheet.eachRow((row, rowNumber) => {
       if (rowNumber === 1) return; // skip header
 
-      const studentCode = String(row.getCell(1).value ?? '').trim();
-      const fullName = String(row.getCell(2).value ?? '').trim();
-      const email = String(row.getCell(3).value ?? '').trim();
-      const phone = String(row.getCell(4).value ?? '').trim() || undefined;
-      const faculty = String(row.getCell(5).value ?? '').trim() || undefined;
-      const dobRaw = row.getCell(6).value;
+      const studentCode = row.getCell(1).text.trim();
+      const cardUid = row.getCell(2).text.trim();
 
-      if (!studentCode || !fullName || !email || !dobRaw) {
+      if (!studentCode || !cardUid) {
         result.errors.push({
           row: rowNumber,
           studentCode: studentCode || '?',
-          reason: 'Thiếu thông tin bắt buộc (MSV, họ tên, email, ngày sinh)',
+          reason: 'Thiếu thông tin bắt buộc (MSSV, UID thẻ vật lý)',
         });
         return;
       }
 
       rows.push({
         studentCode,
-        fullName,
-        email,
-        phone,
-        faculty,
-        dateOfBirth: String(dobRaw),
+        cardUid,
+        rowNumber,
       });
     });
 
-    // Xử lý từng row
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      const queryRunner = this.dataSource.createQueryRunner();
-      await queryRunner.connect();
-      await queryRunner.startTransaction();
-
+    // Mỗi dòng dùng đúng transaction provisioning Student + physical Card.
+    for (const row of rows) {
       try {
-        const exists = await queryRunner.manager.findOne(Student, {
-          withDeleted: true,
-          where: { studentCode: row.studentCode },
-        });
-        if (exists) {
-          result.skipped++;
-          await queryRunner.rollbackTransaction();
-          await queryRunner.release();
-          continue;
-        }
-
-        const dob = this.parseDob(row.dateOfBirth);
-        const defaultPassword = this.formatDobPassword(dob);
-        const passwordHash = await bcrypt.hash(defaultPassword, 10);
-
-        const student = queryRunner.manager.create(Student, {
+        await this.create({
           studentCode: row.studentCode,
-          fullName: row.fullName,
-          email: row.email,
-          phone: row.phone,
-          faculty: row.faculty,
-          dateOfBirth: dob,
-          passwordHash,
-          mustChangePassword: true,
-          isActive: true,
+          cardUid: row.cardUid,
         });
-
-        const savedStudent = await queryRunner.manager.save(student);
-
-        // Tạo tài khoản cho sinh viên
-        const account = queryRunner.manager.create(Account, {
-          studentId: savedStudent.id,
-          balance: 0,
-          dailyLimit: 500000,
-          dailySpent: 0,
-        });
-        await queryRunner.manager.save(account);
-
-        // Tạo thẻ ảo cho sinh viên
-        const card = queryRunner.manager.create(Card, {
-          studentId: savedStudent.id,
-          uid: `MOCK-${row.studentCode}`,
-          chipType: 'MIFARE',
-          status: 'active' as any,
-        });
-        await queryRunner.manager.save(card);
-
-        await queryRunner.commitTransaction();
         result.created++;
-      } catch (err: any) {
-        await queryRunner.rollbackTransaction();
+      } catch (err: unknown) {
+        if (err instanceof ConflictException) {
+          result.skipped++;
+        }
         result.errors.push({
-          row: i + 2,
+          row: row.rowNumber,
           studentCode: row.studentCode,
-          reason: err?.message || 'Lỗi không xác định',
+          reason: err instanceof Error ? err.message : 'Lỗi không xác định',
         });
-      } finally {
-        await queryRunner.release();
       }
     }
 
@@ -353,33 +279,15 @@ export class StudentsService {
 
   // ─── HELPERS ──────────────────────────────────────────────────────────────
 
-  /**
-   * Parse ngày sinh từ string (dd/mm/yyyy hoặc Excel date number)
-   */
-  private parseDob(raw: string): Date {
-    // Nếu là số (Excel serial date)
-    if (/^\d+$/.test(raw)) {
-      const excelEpoch = new Date(1899, 11, 30);
-      return new Date(excelEpoch.getTime() + parseInt(raw) * 86400000);
+  private normalizePhysicalCardUid(uid: string): string {
+    const value = uid.trim().toUpperCase();
+    if (value.startsWith('MOCK-')) {
+      throw new BadRequestException({
+        code: 'PHYSICAL_CARD_REQUIRED',
+        message:
+          'Provisioning chỉ chấp nhận UID thẻ vật lý, không nhận MOCK Card',
+      });
     }
-    // dd/mm/yyyy
-    const parts = raw.split('/');
-    if (parts.length === 3) {
-      return new Date(
-        `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`,
-      );
-    }
-    // yyyy-mm-dd
-    return new Date(raw);
-  }
-
-  /**
-   * Tạo password mặc định dạng ddmmyyyy từ Date
-   */
-  private formatDobPassword(dob: Date): string {
-    const dd = String(dob.getDate()).padStart(2, '0');
-    const mm = String(dob.getMonth() + 1).padStart(2, '0');
-    const yyyy = dob.getFullYear();
-    return `${dd}${mm}${yyyy}`;
+    return normalizeUid(value);
   }
 }

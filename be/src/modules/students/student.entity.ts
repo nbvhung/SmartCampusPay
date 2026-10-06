@@ -22,17 +22,17 @@ export class Student {
   @Column({ unique: true, length: 20 })
   studentCode: string;
 
-  @Column({ length: 100 })
-  fullName: string;
+  @Column({ type: 'varchar', length: 100, nullable: true })
+  fullName: string | null;
 
-  @Column({ unique: true, length: 100 })
-  email: string;
+  @Column({ type: 'varchar', unique: true, length: 100, nullable: true })
+  email: string | null;
 
   @Column({ length: 15, nullable: true })
   phone: string;
 
-  @Column({ length: 50 })
-  faculty: string;
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  faculty: string | null;
 
   @Column({ default: true })
   isActive: boolean;
@@ -45,6 +45,12 @@ export class Student {
 
   @Column({ nullable: true, select: false })
   passwordHash: string;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  registeredAt: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  profileCompletedAt: Date | null;
 
   @CreateDateColumn()
   createdAt: Date;

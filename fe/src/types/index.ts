@@ -1,4 +1,11 @@
-export type { AuthUser, StudentUser, AdminUser, LoginResponse, AuthState, UserRole } from './auth';
+export type {
+  AuthUser,
+  StudentUser,
+  AdminUser,
+  LoginResponse,
+  AuthState,
+  UserRole,
+} from "./auth";
 
 export interface ApiResponse<T = unknown> {
   success: boolean;
@@ -16,13 +23,15 @@ export interface PaginatedResponse<T> {
 export interface Student {
   id: string;
   studentCode: string;
-  fullName: string;
-  email: string;
+  fullName: string | null;
+  email: string | null;
   phone?: string;
-  faculty: string;
+  faculty: string | null;
   isActive: boolean;
   dateOfBirth?: string;
   mustChangePassword: boolean;
+  registeredAt: string | null;
+  profileCompletedAt: string | null;
   createdAt: string;
   updatedAt: string;
   accounts?: Account[];
@@ -34,19 +43,19 @@ export interface Account {
   balance: number;
   dailyLimit: number;
   dailySpent: number;
-  status: 'active' | 'frozen' | 'closed';
+  status: "active" | "frozen" | "closed";
   studentId: string;
   student?: Student;
   createdAt: string;
 }
 
-export type CardStatus = 'active' | 'inactive' | 'lost' | 'frozen';
+export type CardStatus = "active" | "inactive" | "lost" | "frozen";
 
 export interface Card {
   id: string;
   uid: string;
   chipType: string;
-  chipData?: Record<string, any>;
+  chipData?: Record<string, unknown>;
   status: CardStatus;
   lastUsedAt?: string;
   studentId: string;
@@ -55,7 +64,8 @@ export interface Card {
   updatedAt: string;
 }
 
-export type MerchantType = 'canteen' | 'library' | 'parking' | 'printing' | 'other';
+export type MerchantType =
+  "canteen" | "library" | "parking" | "printing" | "other";
 
 export interface Merchant {
   id: string;
@@ -73,8 +83,8 @@ export interface MerchantCreate {
   location?: string;
 }
 
-export type TransactionType = 'debit' | 'credit';
-export type TransactionStatus = 'pending' | 'success' | 'failed' | 'refunded';
+export type TransactionType = "debit" | "credit";
+export type TransactionStatus = "pending" | "success" | "failed" | "refunded";
 
 export interface Transaction {
   id: string;

@@ -1,10 +1,7 @@
 export interface ImportStudentRow {
   studentCode: string;
-  fullName: string;
-  email: string;
-  phone?: string;
-  faculty?: string;
-  dateOfBirth: string; // dd/mm/yyyy hoặc Date từ Excel
+  cardUid: string;
+  rowNumber: number;
 }
 
 export interface BulkImportResult {

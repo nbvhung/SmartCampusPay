@@ -50,6 +50,10 @@ export class TopupClaimsService {
       .findOneBy({ id: studentId });
     if (!student?.isActive)
       throw new BadRequestException('Tài khoản sinh viên không hoạt động');
+    if (!student.fullName)
+      throw new BadRequestException(
+        'Sinh viên cần hoàn tất họ tên trước khi nộp hồ sơ',
+      );
     if (
       dto.studentCode.trim().toUpperCase() !==
         student.studentCode.toUpperCase() ||

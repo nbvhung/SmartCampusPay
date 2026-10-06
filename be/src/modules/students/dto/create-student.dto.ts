@@ -1,28 +1,13 @@
-import { IsString, IsEmail, IsOptional, IsDateString } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
 export class CreateStudentDto {
   @IsString()
+  @IsNotEmpty()
+  @MaxLength(20)
   studentCode: string;
 
   @IsString()
-  fullName: string;
-
-  @IsEmail({}, { message: 'Email không hợp lệ' })
-  email: string;
-
-  @IsOptional()
-  @Transform(({ value }) => (value === '' ? undefined : value))
-  @IsString()
-  phone?: string;
-
-  @IsOptional()
-  @Transform(({ value }) => (value === '' ? undefined : value))
-  @IsString()
-  faculty?: string;
-
-  @IsOptional()
-  @Transform(({ value }) => (value === '' ? undefined : value))
-  @IsDateString({}, { message: 'Ngày sinh không hợp lệ (YYYY-MM-DD)' })
-  dateOfBirth?: string;
+  @IsNotEmpty()
+  @MaxLength(50)
+  cardUid: string;
 }

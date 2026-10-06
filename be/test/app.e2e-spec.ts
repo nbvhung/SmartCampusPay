@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { ArchiveStudentWallets1791043200000 } from '../src/database/migrations/1791043200000-ArchiveStudentWallets';
 import { RevealArchivedStudents1791129600000 } from '../src/database/migrations/1791129600000-RevealArchivedStudents';
+import { StudentOnboarding1791216000000 } from '../src/database/migrations/1791216000000-StudentOnboarding';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
@@ -10,6 +11,7 @@ import { DataSource } from 'typeorm';
 import { Client } from 'pg';
 import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcryptjs';
+import * as ExcelJS from 'exceljs';
 import request from 'supertest';
 import { config } from 'dotenv';
 import { Student } from '../src/modules/students/student.entity';
@@ -45,6 +47,7 @@ import { RedisService } from '../src/modules/redis/redis.service';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { HardwareDeviceController } from '../src/modules/hardware-device/hardware-device.controller';
 import { HardwareDeviceService } from '../src/modules/hardware-device/hardware-device.service';
+import { StudentsService } from '../src/modules/students/students.service';
 
 config({ quiet: true });
 jest.setTimeout(60000);
@@ -67,6 +70,7 @@ describe('Hardware payments with real PostgreSQL', () => {
   let studentToken: string;
   let adminToken: string;
   let liveRedis: RedisService;
+  let students: StudentsService;
   const redisFallback = {
     acquireLock: async () => 'fallback:integration',
     releaseLock: async () => undefined,
@@ -101,6 +105,7 @@ describe('Hardware payments with real PostgreSQL', () => {
         PrepareHardwareIntegration1790899200000,
         ArchiveStudentWallets1791043200000,
         RevealArchivedStudents1791129600000,
+        StudentOnboarding1791216000000,
       ],
       synchronize: false,
     });
@@ -109,6 +114,7 @@ describe('Hardware payments with real PostgreSQL', () => {
     await db.runMigrations();
     // No synchronize: the test validates the actual migration-created schema.
     const cards = new CardsService(db.getRepository(Card));
+    students = new StudentsService(db.getRepository(Student), db);
     accounts = new AccountsService(db.getRepository(Account));
     pending = new TopupPendingService(db.getRepository(TopupPending), db);
     payments = new TransactionsService(
@@ -290,7 +296,103 @@ describe('Hardware payments with real PostgreSQL', () => {
     ).rejects.toMatchObject({ driverError: { code: '23505' } });
   });
 
+  it('provisions a Student stub and physical Card without Account or password', async () => {
+    const provisioned = await students.create({
+      studentCode: ' b25dccn001 ',
+      cardUid: '04:a1:b2:c3:d4:e5:80',
+    });
+    const persisted = await db
+      .getRepository(Student)
+      .createQueryBuilder('student')
+      .addSelect('student.passwordHash')
+      .where('student.id = :id', { id: provisioned.id })
+      .getOneOrFail();
+    const provisionedCard = await db
+      .getRepository(Card)
+      .findOneByOrFail({ studentId: provisioned.id });
+
+    expect(persisted).toMatchObject({
+      studentCode: 'B25DCCN001',
+      fullName: null,
+      email: null,
+      faculty: null,
+      registeredAt: null,
+      profileCompletedAt: null,
+      passwordHash: null,
+    });
+    expect(provisionedCard).toMatchObject({
+      uid: '04A1B2C3D4E580',
+      status: CardStatus.ACTIVE,
+      studentId: provisioned.id,
+    });
+    expect(
+      await db.getRepository(Account).countBy({ studentId: provisioned.id }),
+    ).toBe(0);
+  });
+
+  it('rejects MOCK Card provisioning before creating a Student', async () => {
+    await expect(
+      students.create({
+        studentCode: 'B25DCCN002',
+        cardUid: 'MOCK-B25DCCN002',
+      }),
+    ).rejects.toMatchObject({ response: { code: 'PHYSICAL_CARD_REQUIRED' } });
+    expect(
+      await db.getRepository(Student).countBy({ studentCode: 'B25DCCN002' }),
+    ).toBe(0);
+  });
+
+  it('rolls back the Student when the physical Card UID already exists', async () => {
+    await expect(
+      students.create({ studentCode: 'B25DCCN003', cardUid: card.uid }),
+    ).rejects.toThrow('UID thẻ đã tồn tại');
+    expect(
+      await db.getRepository(Student).countBy({ studentCode: 'B25DCCN003' }),
+    ).toBe(0);
+  });
+
+  it('imports MSSV and physical UID rows through the provisioning path', async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Provisioning');
+    sheet.addRow(['MSSV', 'UID thẻ vật lý']);
+    sheet.addRow(['B25DCCN004', '04 11 22 33 44 55 66']);
+
+    const result = await students.bulkImport(
+      Buffer.from(await workbook.xlsx.writeBuffer()),
+    );
+    const imported = await db
+      .getRepository(Student)
+      .findOneByOrFail({ studentCode: 'B25DCCN004' });
+
+    expect(result).toEqual({ created: 1, skipped: 0, errors: [] });
+    expect(imported).toMatchObject({
+      fullName: null,
+      email: null,
+      faculty: null,
+    });
+    expect(
+      await db.getRepository(Card).findOneByOrFail({ studentId: imported.id }),
+    ).toMatchObject({ uid: '04112233445566', status: CardStatus.ACTIVE });
+    expect(
+      await db.getRepository(Account).countBy({ studentId: imported.id }),
+    ).toBe(0);
+  });
+
+  it('keeps legacy Student profile data and onboarding timestamps unset', async () => {
+    const legacy = await db
+      .getRepository(Student)
+      .findOneByOrFail({ id: student.id });
+    expect(legacy).toMatchObject({
+      fullName: 'Test Student',
+      email: 'test@example.test',
+      faculty: 'Test',
+      registeredAt: null,
+      profileCompletedAt: null,
+    });
+  });
+
   it('upgrades an existing wallet without losing its daily counter', async () => {
+    await db.undoLastMigration(); // StudentOnboarding
     await db.undoLastMigration(); // RevealArchivedStudents
     await db.undoLastMigration(); // ArchiveStudentWallets
     await db.undoLastMigration(); // PrepareHardwareIntegration
