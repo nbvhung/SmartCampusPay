@@ -113,14 +113,16 @@ export default function LoginPage() {
               <span>{isLoading ? 'Đang đăng nhập...' : 'Đăng nhập'}</span>
               {isLoading ? <Loader2 size={20} className="login-spinner" /> : <ArrowRight size={20} />}
             </button>
-          </form></>}
+          </form>
+          {portal === 'student' && <div className="register-login-link"><span>Chưa có tài khoản?</span><Link href="/register">Đăng ký</Link></div>}
+          </>}
 
           <div className="login-divider"><span /> MỘT TÀI KHOẢN, MỌI TIỆN ÍCH <span /></div>
           <div className="login-account-note"><span className="login-note-icon"><ShieldCheck size={21} /></span><p>{portal === 'admin' ? 'Quyền quản trị theo tài khoản được cấp' : 'Truy cập đúng cổng tài khoản'}<small>{portal === 'admin' ? 'Chỉ quản trị cấp cao được tạo, sửa, khóa và xóa quản trị viên.' : 'Sinh viên chỉ truy cập ví và giao dịch cá nhân.'}</small></p></div>
 
           <details className="login-help" ref={helpRef} open={helpOpen} onToggle={event => setHelpOpen(event.currentTarget.open)}>
             <summary><span><Info size={16} /> Lần đầu đăng nhập hoặc cần hỗ trợ?</span><ChevronDown size={16} /></summary>
-            <div><p>Sinh viên đăng nhập bằng <strong>mã sinh viên</strong>. Mật khẩu lần đầu là ngày sinh theo định dạng <strong>ddmmyyyy</strong> (ví dụ: 02092004), nếu tài khoản đã được cấp mật khẩu mặc định.</p><p>Bạn sẽ được yêu cầu đổi mật khẩu sau lần đăng nhập đầu. Nếu quên mật khẩu hoặc chưa có tài khoản, hãy liên hệ quản trị viên SmartCampusPay để được hỗ trợ.</p></div>
+            <div>{portal === 'student' ? <><p>Sinh viên mới chọn <strong>Đăng ký</strong>, nhập mã sinh viên và số điện thoại để nhận OTP. MSSV và thẻ vật lý cần được nhà trường cấp phát trước.</p><p>Sau khi đăng ký thành công, đăng nhập bằng <strong>mã sinh viên</strong> và dùng <strong>số điện thoại đã xác minh</strong> làm mật khẩu ban đầu. Hệ thống sẽ yêu cầu đổi mật khẩu ở lần đăng nhập đầu tiên.</p></> : <p>Quản trị viên đăng nhập bằng tài khoản được cấp. Nếu quên mật khẩu hoặc không thể truy cập, hãy liên hệ quản trị viên cấp cao để được hỗ trợ.</p>}</div>
           </details>
         </div>
 

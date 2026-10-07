@@ -620,8 +620,6 @@ describe('Student top-up claims with PostgreSQL', () => {
       new ConfigService({ JWT_REFRESH_SECRET: 'refresh-test' }),
       {} as any,
       {} as any,
-      accounts,
-      cardsService,
       db.getRepository(Student),
     );
     await expect(

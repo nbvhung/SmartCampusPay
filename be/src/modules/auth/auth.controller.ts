@@ -14,6 +14,9 @@ import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { LoginDto, AdminLoginDto, UnifiedLoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { RequestRegistrationOtpDto } from './dto/request-registration-otp.dto';
+import { VerifyRegistrationOtpDto } from './dto/verify-registration-otp.dto';
+import { RegistrationService } from './registration.service';
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
@@ -24,7 +27,29 @@ const COOKIE_OPTIONS = {
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly service: AuthService) {}
+  constructor(
+    private readonly service: AuthService,
+    private readonly registration: RegistrationService,
+  ) {}
+
+  // ─── STUDENT REGISTRATION ──────────────────────────────────────────────────
+
+  @Public()
+  @Post('register/request-otp')
+  @HttpCode(HttpStatus.OK)
+  requestRegistrationOtp(
+    @Body() dto: RequestRegistrationOtpDto,
+    @Req() req: { ip?: string },
+  ) {
+    return this.registration.requestOtp(dto.studentCode, dto.phone, req.ip);
+  }
+
+  @Public()
+  @Post('register/verify')
+  @HttpCode(HttpStatus.OK)
+  verifyRegistration(@Body() dto: VerifyRegistrationOtpDto) {
+    return this.registration.verify(dto.registrationId, dto.otp);
+  }
 
   // ─── STUDENT LOGIN ───────────────────────────────────────────────────────────
 

@@ -10,11 +10,7 @@ import { Repository } from 'typeorm';
 import * as bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { Student } from '../students/student.entity';
-import { Admin } from '../admins/admin.entity';
 import { AdminsService } from '../admins/admins.service';
-import { AccountsService } from '../accounts/accounts.service';
-import { CardsService } from '../cards/cards.service';
-import { Card } from '../cards/card.entity';
 import { RedisService } from '../redis/redis.service';
 
 const ACCESS_TTL_SEC = 15 * 60; // 15 phút
@@ -27,8 +23,6 @@ export class AuthService {
     private readonly config: ConfigService,
     private readonly adminsService: AdminsService,
     private readonly redis: RedisService,
-    private readonly accountsService: AccountsService,
-    private readonly cardsService: CardsService,
     @InjectRepository(Student)
     private readonly studentRepo: Repository<Student>,
   ) {}
@@ -57,34 +51,6 @@ export class AuthService {
       (await bcrypt.compare(password, student.passwordHash));
     if (!valid)
       throw new UnauthorizedException('Mã sinh viên hoặc mật khẩu không đúng');
-
-    // Tự động tạo account nếu chưa có
-    // An archived wallet must stay archived when its owner logs in.
-    await this.accountsService.createAccountIfNotExists(student.id, true);
-
-    // Tự động tạo thẻ ảo nếu chưa có (cho SV cũ)
-    await this.studentRepo.manager.transaction(async (manager) => {
-      const currentStudent = await manager.findOne(Student, {
-        where: { id: student.id, isActive: true },
-        lock: { mode: 'pessimistic_write' },
-      });
-      if (!currentStudent)
-        throw new UnauthorizedException('Sinh viên đã ngừng hoạt động');
-      const existingCard = await manager.findOne(Card, {
-        where: { studentId: student.id },
-        withDeleted: true,
-      });
-      if (!existingCard) {
-        await manager.save(
-          Card,
-          manager.create(Card, {
-            uid: `MOCK-${student.studentCode}`,
-            studentId: student.id,
-            chipType: 'MIFARE',
-          }),
-        );
-      }
-    });
 
     const { accessToken, refreshToken } = await this.issueTokenPair(
       student.id,

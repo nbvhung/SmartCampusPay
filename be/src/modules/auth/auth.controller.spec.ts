@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { RegistrationService } from './registration.service';
 import { HttpExceptionFilter } from '../../common/filters/http-exception.filter';
 import { TransformInterceptor } from '../../common/interceptors/transform.interceptor';
 
@@ -16,11 +17,18 @@ describe('Auth HTTP responses', () => {
     studentLogin: jest.fn(),
     adminLogin: jest.fn(),
   };
+  const registration = {
+    requestOtp: jest.fn(),
+    verify: jest.fn(),
+  };
 
   beforeAll(async () => {
     const module = await Test.createTestingModule({
       controllers: [AuthController],
-      providers: [{ provide: AuthService, useValue: service }],
+      providers: [
+        { provide: AuthService, useValue: service },
+        { provide: RegistrationService, useValue: registration },
+      ],
     }).compile();
     app = module.createNestApplication();
     app.setGlobalPrefix('api/v1');

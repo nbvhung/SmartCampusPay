@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 interface HeaderProps {
   title: string;
-  user?: { fullName?: string; studentCode?: string; role?: string } | null;
+  user?: { fullName?: string | null; studentCode?: string; role?: string } | null;
   menuOpen?: boolean;
   onMenuToggle?: () => void;
 }

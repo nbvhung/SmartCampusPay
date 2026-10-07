@@ -35,6 +35,11 @@ export default function AdminStudentsPage() {
   const searchInput = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [resultCount, setResultCount] = useState(0);
+  const [importing, setImporting] = useState(false);
+  const [importFeedback, setImportFeedback] = useState<{
+    tone: "success" | "error";
+    message: string;
+  } | null>(null);
 
   // Modal state
   const [modalMode, setModalMode] = useState<ModalMode | null>(null);
@@ -163,10 +168,28 @@ export default function AdminStudentsPage() {
   }
 
   async function handleImport(file: File) {
+    if (importing) return;
+    setImporting(true);
+    setImportFeedback(null);
     const fd = new FormData();
     fd.append("file", file);
-    await studentApi.import(fd);
-    fetch();
+    try {
+      const response = await studentApi.import(fd);
+      const { created, skipped, errors } = response.data.data;
+      setImportFeedback({
+        tone: errors.length > 0 ? "error" : "success",
+        message: `Đã provision ${created} sinh viên; bỏ qua ${skipped}; lỗi ${errors.length}.`,
+      });
+      fetch();
+    } catch (err: unknown) {
+      setImportFeedback({
+        tone: "error",
+        message: apiErrorMessage(err, "Không thể import file provisioning"),
+      });
+    } finally {
+      setImporting(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -233,6 +256,30 @@ export default function AdminStudentsPage() {
       key: "faculty",
       header: "Khoa",
       render: (s) => s.faculty || "Chưa cập nhật",
+    },
+    {
+      key: "registeredAt",
+      header: "Đăng ký",
+      render: (s) => {
+        const legacy = !s.registeredAt && Boolean(s.accounts?.length);
+        return (
+          <span
+            className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+              s.registeredAt
+                ? "bg-green-100 text-green-700"
+                : legacy
+                  ? "bg-blue-100 text-blue-700"
+                  : "bg-amber-100 text-amber-700"
+            }`}
+          >
+            {s.registeredAt
+              ? "Đã đăng ký"
+              : legacy
+                ? "Tài khoản legacy"
+                : "Chờ đăng ký"}
+          </span>
+        );
+      },
     },
     {
       key: "isActive",
@@ -318,10 +365,15 @@ export default function AdminStudentsPage() {
           </button>
           <button
             onClick={() => fileRef.current?.click()}
+            disabled={importing}
             className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1.5"
           >
-            <FileSpreadsheet className="w-4 h-4" />
-            Import Excel
+            {importing ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="w-4 h-4" />
+            )}
+            {importing ? "Đang import..." : "Import Excel"}
           </button>
           <input
             ref={fileRef}
@@ -334,6 +386,25 @@ export default function AdminStudentsPage() {
             }
           />
         </div>
+      </div>
+
+      <div className="mb-4 text-sm">
+        <p className="text-gray-500">
+          Provisioning chỉ nhận MSSV và UID thẻ NFC vật lý; không tạo hồ sơ, mật
+          khẩu hoặc tài khoản ví.
+        </p>
+        {importFeedback && (
+          <p
+            role={importFeedback.tone === "error" ? "alert" : "status"}
+            className={`mt-2 ${
+              importFeedback.tone === "error"
+                ? "text-red-600"
+                : "text-green-700"
+            }`}
+          >
+            {importFeedback.message}
+          </p>
+        )}
       </div>
 
       {/* Data table */}

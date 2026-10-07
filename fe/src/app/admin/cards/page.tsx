@@ -119,7 +119,7 @@ export default function AdminCardsPage() {
                 <input list="student-list" value={form.studentCode} onChange={(e) => setForm(p => ({ ...p, studentCode: e.target.value }))}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-red-500 outline-none" />
                 <datalist id="student-list">
-                  {students.map(s => <option key={s.id} value={s.studentCode}>{s.fullName} - {s.studentCode}</option>)}
+                  {students.map(s => <option key={s.id} value={s.studentCode}>{s.fullName || 'Chưa cập nhật'} - {s.studentCode}</option>)}
                 </datalist>
               </div>
               <div>
