@@ -324,6 +324,10 @@ describe('Hardware payments with real PostgreSQL', () => {
       balanceAfter: 75000,
     });
     expect(await balance()).toBe(75000);
+    expect(
+      (await db.getRepository(Card).findOneByOrFail({ id: card.id }))
+        .lastUsedAt,
+    ).toBeInstanceOf(Date);
   });
 
   it('provisions a Student stub and physical Card without Account or password', async () => {
@@ -694,6 +698,10 @@ describe('Hardware payments with real PostgreSQL', () => {
       });
       expect(await balance()).toBe(100000);
       expect(await db.getRepository(Transaction).count()).toBe(0);
+      expect(
+        (await db.getRepository(Card).findOneByOrFail({ id: card.id }))
+          .lastUsedAt,
+      ).toBeNull();
     } finally {
       await db.query('DROP TRIGGER reject_test_debit ON transactions');
       await db.query('DROP FUNCTION reject_test_debit()');
@@ -743,15 +751,44 @@ describe('Hardware payments with real PostgreSQL', () => {
     expect(await balance()).toBe(100000);
   });
 
-  it('rejects locked cards, inactive students and revoked merchant keys', async () => {
-    await db.getRepository(Card).update(card.id, { status: CardStatus.FROZEN });
-    expect((await pay().expect(400)).body.code).toBe('CARD_INACTIVE');
-    await db.getRepository(Card).update(card.id, { status: CardStatus.ACTIVE });
+  it.each([CardStatus.INACTIVE, CardStatus.LOST, CardStatus.FROZEN])(
+    'rejects a %s card without debiting the wallet',
+    async (status) => {
+      await db.getRepository(Card).update(card.id, { status });
+      expect((await pay().expect(400)).body.code).toBe('CARD_INACTIVE');
+      expect(await balance()).toBe(100000);
+    },
+  );
+
+  it('rejects a nonexistent card without debiting the wallet', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/transactions/pay/card')
+      .set('X-API-Key', apiKey)
+      .send({ ...payRequest(), cardUid: 'DEADBEEF' })
+      .expect(404);
+    expect(response.body.code).toBe('CARD_NOT_FOUND');
+    expect(await balance()).toBe(100000);
+  });
+
+  it('rejects inactive students and revoked merchant keys', async () => {
     await db.getRepository(Student).update(student.id, { isActive: false });
     expect((await pay().expect(400)).body.code).toBe('STUDENT_INACTIVE');
     await db.getRepository(Merchant).update(merchant.id, { isActive: false });
     await pay().expect(401);
     expect(await balance()).toBe(100000);
+  });
+
+  it('returns stable wallet decline codes without debiting', async () => {
+    await db.getRepository(Account).update(account.id, { balance: 1000 });
+    expect((await pay().expect(400)).body.code).toBe('INSUFFICIENT_BALANCE');
+
+    await db.getRepository(Account).update(account.id, {
+      balance: 100000,
+      status: AccountStatus.FROZEN,
+    });
+    expect((await pay().expect(400)).body.code).toBe('ACCOUNT_FROZEN');
+    expect(await balance()).toBe(100000);
+    expect(await db.getRepository(Transaction).count()).toBe(0);
   });
 
   it('enforces daily limits for concurrent requests', async () => {

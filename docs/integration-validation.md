@@ -51,7 +51,7 @@ Các giao dịch cũ chưa lưu UID không thể xác minh replay qua UID an to�
 1. Dùng tài khoản/ví thử, đăng ký UID có số 0 đầu; cấp raw API key merchant cho thiết bị.
 2. Gửi pay/card, ngắt response sau khi server đã commit; retry cùng UUID/payload. Phải trả cùng transaction ID và chỉ trừ một lần.
 3. Reboot khi chưa rõ kết quả. Firmware phải replay payload trong NVS trước khi nhận giao dịch mới.
-4. POS web: refresh sau timeout phải khôi phục UID/amount/key và khóa chỉnh payload; nhập lại đúng API key (đối chiếu SHA-256 fingerprint). Không lưu raw API key vào localStorage. Các tab POS được tuần tự hóa bằng Web Locks; cần HTTPS hoặc localhost.
+4. POS web test console: refresh sau timeout phải khôi phục UID/amount/key và khóa chỉnh payload; lookup 404 phải replay request gốc thay vì xóa pending. Không lưu raw API key vào localStorage. Các tab được tuần tự hóa bằng Web Locks; cần HTTPS hoặc localhost. Production phải giữ `NEXT_PUBLIC_ENABLE_POS_TEST_CONSOLE=false` và provision API key vào NVS của ESP32.
 5. Khóa thẻ sau pay rồi replay: vẫn trả giao dịch thành công cũ. UUID mới phải bị từ chối.
 6. Gửi webhook hai lần/cùng lúc; một transfer chỉ cộng một lần. Chuyển thêm vào QR đã dùng, sai tiền, hết hạn hoặc bị hủy phải xuất hiện ở hàng đợi.
 7. Thử mất WiFi, 401, 429, 5xx: giữ payload/key, backoff, không báo thất bại dứt khoát khi chưa có kết quả.

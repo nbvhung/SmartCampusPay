@@ -2,7 +2,7 @@
  * SmartCampusPay — Firmware ESP32-S3  (v2.0 — State Machine Edition)
  * =========================================================================
  * Cấu trúc hoàn chỉnh với:
- *   - State machine rõ ràng (8 trạng thái)
+ *   - State machine rõ ràng (11 trạng thái)
  *   - Màn hình TFT 2.4" (ILI9341, 320×240, SPI)
  *   - 3 nút GPIO: BTN_PAY, BTN_TOPUP, BTN_CONFIRM / BTN_CANCEL (long-press)
  *   - 5 mức số tiền preset (10k, 15k, 20k, 25k, 30k)
@@ -31,7 +31,7 @@
  *   BTN_CONFIRM:       GPIO 6   (INPUT_PULLUP — giữ 2s = CANCEL)
  *
  * ── NVS Keys ─────────────────────────────────────────────────────────────
- *   "wifi_ssid", "wifi_pass", "api_key", "base_url"
+ *   "wifi_ssid", "wifi_pass", "api_key", "base_url", "pending_pay"
  *   → Nạp lần đầu bằng Serial Monitor: nhập lệnh "config" rồi follow prompt
  *
  * ── Bảo mật HTTPS ────────────────────────────────────────────────────────
@@ -107,9 +107,10 @@
 // ── State Machine ─────────────────────────────────────────────────────────
 enum State {
   STATE_WIFI_CONNECTING,   // Kết nối WiFi lúc khởi động
-  STATE_IDLE,              // Chờ quẹt thẻ (hiện QR tĩnh)
-  STATE_CARD_DETECTED,     // Đã đọc thẻ, hiện tên SV, chờ chọn mode
-  STATE_SELECT_AMOUNT,     // Chọn số tiền thanh toán (5 preset)
+  STATE_IDLE,              // Chọn mode thanh toán/nạp tiền
+  STATE_SELECT_AMOUNT,     // Chọn số tiền thanh toán trước khi quẹt thẻ
+  STATE_WAITING_FOR_PAYMENT_CARD, // Chờ NFC cho payment đã chốt amount
+  STATE_WAITING_FOR_TOPUP_CARD, // Chờ NFC để xác định ví cần nạp
   STATE_SELECT_TOPUP_AMOUNT, // Chọn số tiền nạp trước khi tạo QR
   STATE_PROCESSING,        // Đang gọi API thanh toán
   STATE_RESULT,            // Hiện kết quả thành công / thất bại
@@ -140,6 +141,7 @@ String  currentFullName    = "";
 long    currentBalance     = 0;
 String  currentRefCode     = "";
 int     selectedAmountIdx  = 0;    // Index trong mảng preset amounts
+long    currentPaymentAmount = 0;
 long    currentTopupAmount = 0;
 
 // Thời gian
@@ -225,11 +227,11 @@ void handleSerialConfig() {
   Serial.print("3. Backend URL: ");  String url  = readSerialLine(); Serial.println(url);
   Serial.print("4. API Key: ");      String key  = readSerialLine(); Serial.println("******");
 
-  if (pendingPaymentPayload.length() > 0 && url != BASE_URL) {
-    Serial.println("[CONFIG] Cannot change backend URL with an unresolved payment.");
+  if (pendingPaymentPayload.length() > 0 &&
+      (url != BASE_URL || key != API_KEY)) {
+    Serial.println("[CONFIG] Cannot change backend/API key with an unresolved payment.");
     return;
   }
-  // For a pending request, only repair/rotate the key of the same merchant.
   // Never move an unresolved payment to another merchant or backend.
   
   if (ssid.length() > 0) {
@@ -337,26 +339,39 @@ void showIdle() {
   tftClear();
   tftHeader("SmartCampusPay");
   drawWifiIcon(WiFi.status() == WL_CONNECTED);
-  tftCenteredText("Vui long quet the", 50, C_WHITE, 2);
-  tftCenteredText("de thanh toan", 74, C_WHITE, 2);
+  tftButton(10, 45, 140, 38, "[ BTN1 ] THANH TOAN", C_WHITE, C_DARK_RED);
+  tftButton(165, 45, 145, 38, "[ BTN2 ] NAP TIEN", C_WHITE, 0x0210);
 
   // Hiện QR tĩnh nếu đã lấy được
   if (staticQrUrl.length() > 0) {
     tft.setTextSize(1);
     tft.setTextColor(C_GRAY, C_BG);
-    tft.setCursor(8, 105);
+    tft.setCursor(8, 95);
     tft.print("Hoac quet QR nap tien:");
 
     // Render QR tĩnh — sử dụng URL (cần encode bằng qrcodegen thật)
     // TODO (phase 2): thay bằng qrcodegen library thật
     // Tạm thời: hiện URL text và box placeholder
-    tft.drawRoundRect(70, 115, 180, 100, 6, C_GRAY);
-    tftCenteredText("[ QR Code ]", 155, C_GRAY, 1);
+    tft.drawRoundRect(70, 105, 180, 100, 6, C_GRAY);
+    tftCenteredText("[ QR Code ]", 145, C_GRAY, 1);
     tft.setCursor(8, 220);
     tft.setTextSize(1);
     tft.setTextColor(C_GRAY, C_BG);
     tft.print("Ghi ro ma SV khi chuyen khoan");
   }
+}
+
+void showWaitingForCard(const char* action, long amount = 0) {
+  tftClear();
+  tftHeader("WAITING FOR CARD");
+  tftCenteredText(action, 70, C_WHITE, 2);
+  if (amount > 0) {
+    char amountText[32];
+    snprintf(amountText, sizeof(amountText), "%ld d", amount);
+    tftCenteredText(amountText, 105, C_YELLOW, 2);
+  }
+  tftCenteredText("Cham the NFC vao dau doc", 150, C_LIGHT_GRAY, 1);
+  tftCenteredText("Giu BTN3 de huy", 220, C_GRAY, 1);
 }
 
 void showCardDetected(const String& name, long balance) {
@@ -691,7 +706,8 @@ bool clearPendingPayment() {
 
 
 PayResult doPayment(const String& uid, long amount) {
-  if (pendingPaymentPayload.length() == 0) {
+  bool recovering = pendingPaymentPayload.length() > 0;
+  if (!recovering) {
     StaticJsonDocument<256> body;
     body["cardUid"] = uid;
     body["amount"] = amount;
@@ -704,6 +720,38 @@ PayResult doPayment(const String& uid, long amount) {
     if (stored == 0) return {false, "Khong luu duoc giao dich", -1, false};
     pendingPaymentPayload = payload;
   }
+
+  if (recovering) {
+    StaticJsonDocument<256> saved;
+    if (deserializeJson(saved, pendingPaymentPayload) != DeserializationError::Ok) {
+      return {false, "Pending payload bi loi", -1, true};
+    }
+    String key = saved["idempotencyKey"] | "";
+    if (key.length() == 0) return {false, "Pending key bi loi", -1, true};
+
+    String lookup = apiRequest("GET", "/transactions/payments/" + key, "", 8000);
+    if (lookup.length() > 0) {
+      StaticJsonDocument<1024> lookupDoc;
+      if (deserializeJson(lookupDoc, lookup) == DeserializationError::Ok) {
+        bool found = lastHttpCode >= 200 && lastHttpCode < 300 &&
+          (lookupDoc["success"] | false);
+        String lookupCode = lookupDoc["code"] | "";
+        if (found) {
+          bool cleared = clearPendingPayment();
+          return {true, "Thanh toan thanh cong", -1, !cleared};
+        }
+        // 404 is not a terminal result. Replay the exact NVS payload below.
+        if (!(lastHttpCode == 404 && lookupCode == "PAYMENT_NOT_FOUND")) {
+          return {false, "Chua xac minh duoc giao dich", -1, true};
+        }
+      } else {
+        return {false, "Phan hoi xac minh bi loi", -1, true};
+      }
+    } else {
+      return {false, "Mat ket noi khi xac minh", -1, true};
+    }
+  }
+
   // Replay the persisted payload, including after power loss. Never generate
   // a new key while an earlier payment has an unknown outcome.
   String resp = apiRequest("POST", "/transactions/pay/card", pendingPaymentPayload, 10000);
@@ -827,6 +875,7 @@ void transitionToIdle() {
   currentBalance     = 0;
   currentRefCode     = "";
   selectedAmountIdx  = 0;
+  currentPaymentAmount = 0;
   currentTopupAmount = 0;
   enterState(STATE_IDLE);
   showIdle();
@@ -958,60 +1007,18 @@ void loop() {
 
     // ────────────────────────────────────────────────────────────────────
     case STATE_IDLE:
-      // Đọc thẻ NFC (debounce CARD_COOLDOWN_MS)
-      if (now - lastCardReadAt > CARD_COOLDOWN_MS) {
-        String uid = readCardUid();
-        if (uid.length() > 0) {
-          lastCardReadAt = now;
-          Serial.printf("[NFC] UID = %s\n", uid.c_str());
-
-          showProcessing("Kiem tra the...");
-          StudentInfo info = getStudentByUid(uid);
-
-          if (!info.found) {
-            showError("The chua dang ky!");
-            delay(2000);
-            showIdle();
-            break;
-          }
-
-          currentCardUid     = uid;
-          currentStudentCode = info.studentCode;
-          currentFullName    = info.fullName;
-
-          // Lấy số dư
-          long bal = getBalanceByUid(uid);
-          currentBalance = (bal >= 0) ? bal : 0;
-
-          enterState(STATE_CARD_DETECTED);
-          showCardDetected(currentFullName, currentBalance);
-        }
-      }
-
-      // Periodic WiFi status icon update
-      if (now % 5000 < 50) drawWifiIcon(WiFi.status() == WL_CONNECTED);
-      break;
-
-    // ────────────────────────────────────────────────────────────────────
-    case STATE_CARD_DETECTED:
-      // BTN_PAY → thanh toán → chọn số tiền
       if (payPressed) {
         selectedAmountIdx = 0;
         enterState(STATE_SELECT_AMOUNT);
         showSelectAmount(selectedAmountIdx, "Tien thanh toan");
         break;
       }
-      // BTN_TOPUP → chọn số tiền nạp trước khi tạo QR
       if (topupPressed) {
-        selectedAmountIdx = 0;
-        enterState(STATE_SELECT_TOPUP_AMOUNT);
-        showSelectAmount(selectedAmountIdx, "Tien nap");
+        enterState(STATE_WAITING_FOR_TOPUP_CARD);
+        showWaitingForCard("NAP TIEN");
         break;
       }
-      // Cancel hoặc timeout 30 giây
-      if (cancelPressed || now - stateEnteredAt > 30000) {
-        transitionToIdle();
-      }
+      if (now % 5000 < 50) drawWifiIcon(WiFi.status() == WL_CONNECTED);
       break;
 
     // ────────────────────────────────────────────────────────────────────
@@ -1028,33 +1035,45 @@ void loop() {
         showSelectAmount(selectedAmountIdx, "Tien thanh toan");
         break;
       }
-      // BTN_CONFIRM → xác nhận số tiền đã chọn → thanh toán
+      // Chốt amount trước, sau đó mới cho phép đọc thẻ.
       if (confirmPressed) {
-        long amount = AMOUNTS[selectedAmountIdx];
-        enterState(STATE_PROCESSING);
-        showProcessing("Dang thanh toan...");
+        currentPaymentAmount = AMOUNTS[selectedAmountIdx];
+        enterState(STATE_WAITING_FOR_PAYMENT_CARD);
+        showWaitingForCard("THANH TOAN", currentPaymentAmount);
+        break;
+      }
+      if (cancelPressed || now - stateEnteredAt > 30000) {
+        transitionToIdle();
+      }
+      break;
 
-        PayResult res = doPayment(currentCardUid, amount);
+    // ────────────────────────────────────────────────────────────────────
+    case STATE_WAITING_FOR_PAYMENT_CARD:
+      if (now - lastCardReadAt > CARD_COOLDOWN_MS) {
+        String uid = readCardUid();
+        if (uid.length() > 0) {
+          lastCardReadAt = now;
+          currentCardUid = uid;
+          enterState(STATE_PROCESSING);
+          showProcessing("Dang thanh toan...");
 
-        if (res.pending) {
-          showProcessing("Chua ro ket qua. Xac minh...");
-          lastPollAt = millis();
-          break;
-        }
-        resultSuccess = res.success;
-        if (res.success) {
-          resultMessage = "Thanh toan " + String(AMOUNTS[selectedAmountIdx] / 1000) + "k thanh cong!";
-          playTrack(VOICE_PAY_OK);
-          delay(300);
-          // Fetch số dư mới
-          long newBal = getBalanceByUid(currentCardUid);
-          if (newBal >= 0) {
-            speakBalance(newBal);
-            res.newBalance = newBal;
+          PayResult res = doPayment(currentCardUid, currentPaymentAmount);
+          if (res.pending) {
+            showProcessing("Chua ro ket qua. Xac minh...");
+            lastPollAt = millis();
+            break;
           }
-        } else {
-          // Map error message
-          if (res.message.indexOf("Insufficient") >= 0 || res.message.indexOf("so du") >= 0) {
+          resultSuccess = res.success;
+          if (res.success) {
+            resultMessage = "Thanh toan " + String(currentPaymentAmount / 1000) + "k thanh cong!";
+            playTrack(VOICE_PAY_OK);
+            delay(300);
+            long newBal = getBalanceByUid(currentCardUid);
+            if (newBal >= 0) {
+              speakBalance(newBal);
+              res.newBalance = newBal;
+            }
+          } else if (res.message.indexOf("Insufficient") >= 0 || res.message.indexOf("so du") >= 0) {
             resultMessage = "Khong du so du!";
             playTrack(VOICE_INSUFFICIENT);
           } else if (res.message.indexOf("Daily limit") >= 0) {
@@ -1067,17 +1086,40 @@ void loop() {
             resultMessage = "Thanh toan that bai!";
             playTrack(VOICE_PAY_FAIL);
           }
-        }
 
-        enterState(STATE_RESULT);
-        showResult(resultSuccess, resultMessage.c_str(), res.newBalance);
-        resultDisplayedAt = now;
-        break;
+          enterState(STATE_RESULT);
+          showResult(resultSuccess, resultMessage.c_str(), res.newBalance);
+          resultDisplayedAt = now;
+          break;
+        }
       }
-      // Cancel
-      if (cancelPressed || now - stateEnteredAt > 30000) {
-        transitionToIdle();
+      if (cancelPressed || now - stateEnteredAt > 30000) transitionToIdle();
+      break;
+
+    // ────────────────────────────────────────────────────────────────────
+    case STATE_WAITING_FOR_TOPUP_CARD:
+      if (now - lastCardReadAt > CARD_COOLDOWN_MS) {
+        String uid = readCardUid();
+        if (uid.length() > 0) {
+          lastCardReadAt = now;
+          showProcessing("Kiem tra the...");
+          StudentInfo info = getStudentByUid(uid);
+          if (!info.found) {
+            showError("The chua dang ky!");
+            delay(2000);
+            transitionToIdle();
+            break;
+          }
+          currentCardUid = uid;
+          currentStudentCode = info.studentCode;
+          currentFullName = info.fullName;
+          selectedAmountIdx = 0;
+          enterState(STATE_SELECT_TOPUP_AMOUNT);
+          showSelectAmount(selectedAmountIdx, "Tien nap");
+          break;
+        }
       }
+      if (cancelPressed || now - stateEnteredAt > 30000) transitionToIdle();
       break;
 
     // ────────────────────────────────────────────────────────────────────

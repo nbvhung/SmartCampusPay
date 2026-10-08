@@ -25,6 +25,8 @@ X-API-Key: mcp_xxxxxxxxxxxxxxxx
 
 API key được tạo khi admin tạo merchant (`POST /api/v1/merchants`), lấy trường `data.rawApiKey`. Hiện một merchant có một key; demo cấp một merchant cho một thiết bị. Key chỉ hiển thị khi tạo/rotate, database lưu hash.
 
+Production dùng ESP32/NFC reader gọi backend trực tiếp; raw API key được provision vào NVS. Trang web `/pos` chỉ là test console, bị tắt mặc định khi production build và không được dùng để giữ API key production.
+
 ## 2. Quy tắc idempotency (chống thanh toán trùng)
 
 - Mọi request **thanh toán** phải kèm `idempotencyKey` là **UUID** sinh ngay tại thiết bị, giữ nguyên khi **retry** cùng 1 giao dịch.
@@ -234,12 +236,15 @@ SV quét → **phải ghi mã SV vào nội dung chuyển khoản** → backend 
 ### 5.1. Thanh toán tại merchant
 
 ```
-1. Idle: màn hình hiện QR tĩnh + "Quẹt thẻ thanh toán"
-2. SV quẹt thẻ NFC → đọc UID
-3. GET /hardware/students/by-uid/:uid → hiện tên SV
-4. POST /transactions/pay/card { cardUid, amount, idempotencyKey }
-5. Response success → hiện "Thanh toán thành công" + voice + (tùy chọn) số dư mới
+1. Idle: người bán chọn "Thanh toán"
+2. Chọn số tiền → xác nhận
+3. Thiết bị hiển thị WAITING_FOR_CARD và chỉ lúc này mới nhận NFC
+4. SV chạm thẻ → thiết bị lưu full payload + UUID v4 vào NVS
+5. POST /transactions/pay/card { cardUid, amount, idempotencyKey }
+6. Response success → hiện "Thanh toán thành công" + voice + số dư server
    Response lỗi → hiện + voice lỗi tương ứng
+7. Timeout/429/5xx → khóa giao dịch mới, lookup UUID rồi replay cùng payload/key
+8. Chỉ xóa NVS khi success hoặc business decline chắc chắn
 ```
 
 ### 5.2. Nạp tiền — QR động (đề xuất)
