@@ -385,19 +385,19 @@ export default function StudentProfilePage() {
               <div>
                 <label className="text-xs text-gray-500">Số dư</label>
                 <p className="text-xl font-bold text-gray-900">
-                  {(student.accounts?.[0]?.balance ?? 0).toLocaleString()}đ
+                  {(student.account?.balance ?? 0).toLocaleString()}đ
                 </p>
               </div>
               <div>
                 <label className="text-xs text-gray-500">Hạn mức/ngày</label>
                 <p className="font-medium text-gray-900">
-                  {(student.accounts?.[0]?.dailyLimit ?? 0).toLocaleString()}đ
+                  {(student.account?.dailyLimit ?? 0).toLocaleString()}đ
                 </p>
               </div>
               <div>
                 <label className="text-xs text-gray-500">Đã chi hôm nay</label>
                 <p className="font-medium text-gray-900">
-                  {(student.accounts?.[0]?.dailySpent ?? 0).toLocaleString()}đ
+                  {(student.account?.dailySpent ?? 0).toLocaleString()}đ
                 </p>
               </div>
             </div>
@@ -405,9 +405,9 @@ export default function StudentProfilePage() {
               <label className="text-xs text-gray-500">Trạng thái ví</label>
               <p className="font-medium">
                 <span
-                  className={`inline-block px-2 py-0.5 rounded text-xs font-medium mt-1 ${student.accounts?.[0]?.status === "active" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}
+                  className={`inline-block px-2 py-0.5 rounded text-xs font-medium mt-1 ${student.account?.status === "active" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}
                 >
-                  {student.accounts?.[0]?.status === "active"
+                  {student.account?.status === "active"
                     ? "Hoạt động"
                     : "Đã khoá"}
                 </span>

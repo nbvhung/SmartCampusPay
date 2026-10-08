@@ -286,7 +286,7 @@ export class AuthService {
     if (role === 'student') {
       const student = await this.studentRepo.findOne({
         where: { id: userId },
-        relations: { accounts: true, cards: true },
+        relations: { account: true, cards: true },
       });
       if (!student) throw new UnauthorizedException();
       return { ...student, role: 'student' };

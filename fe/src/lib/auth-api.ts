@@ -37,5 +37,5 @@ export const authApi = {
    * Lấy thông tin user hiện tại
    */
   me: () =>
-    api.get<{ success: boolean; data: AuthUser & { mustChangePassword?: boolean; accounts?: Account[]; cards?: Card[] } }>('/auth/me'),
+    api.get<{ success: boolean; data: AuthUser & { mustChangePassword?: boolean; account?: Account | null; cards?: Card[] } }>('/auth/me'),
 };

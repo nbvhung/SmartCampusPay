@@ -15,7 +15,7 @@ export default function StudentTopupPage() {
   const { user } = useAuth();
   const student = user as Student | null;
   const [loading, setLoading] = useState(true);
-  const [balance, setBalance] = useState(student?.accounts?.[0]?.balance ?? 0);
+  const [balance, setBalance] = useState(student?.account?.balance ?? 0);
   const [amount, setAmount] = useState('');
   const [error, setError] = useState('');
   const [txs, setTxs] = useState<Transaction[]>([]);
@@ -35,7 +35,7 @@ export default function StudentTopupPage() {
     if (!user || !studentCode) return;
     const txRes = await transactionApi.listByStudent(studentCode, { limit: 20 }).then(r => r.data.data).catch(() => []);
     setTxs(txRes);
-    setBalance(student?.accounts?.[0]?.balance ?? 0);
+    setBalance(student?.account?.balance ?? 0);
     setLoading(false);
   }, [user, studentCode]);
 
@@ -50,7 +50,7 @@ export default function StudentTopupPage() {
     const poll = async () => {
       try {
         const meRes = await authApi.me();
-        const acc = meRes.data.data?.accounts?.[0];
+        const acc = meRes.data.data?.account;
         if (acc && typeof acc.balance === 'number') setBalance(acc.balance);
       } catch { }
     };

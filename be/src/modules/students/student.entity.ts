@@ -6,6 +6,7 @@ import {
   UpdateDateColumn,
   DeleteDateColumn,
   OneToMany,
+  OneToOne,
 } from 'typeorm';
 import { Card } from '../cards/card.entity';
 import { Account } from '../accounts/account.entity';
@@ -61,8 +62,8 @@ export class Student {
   @OneToMany(() => Card, (card) => card.student)
   cards: Card[];
 
-  @OneToMany(() => Account, (acc) => acc.student)
-  accounts: Account[];
+  @OneToOne(() => Account, (account) => account.student)
+  account: Account | null;
 
   @OneToMany(() => Transaction, (tx) => tx.student)
   transactions: Transaction[];

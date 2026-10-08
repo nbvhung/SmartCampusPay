@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { ArchiveStudentWallets1791043200000 } from '../src/database/migrations/1791043200000-ArchiveStudentWallets';
 import { RevealArchivedStudents1791129600000 } from '../src/database/migrations/1791129600000-RevealArchivedStudents';
 import { StudentOnboarding1791216000000 } from '../src/database/migrations/1791216000000-StudentOnboarding';
+import { TransactionBalanceAudit1791302400000 } from '../src/database/migrations/1791302400000-TransactionBalanceAudit';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
@@ -107,6 +108,7 @@ describe('Hardware payments with real PostgreSQL', () => {
         ArchiveStudentWallets1791043200000,
         RevealArchivedStudents1791129600000,
         StudentOnboarding1791216000000,
+        TransactionBalanceAudit1791302400000,
       ],
       synchronize: false,
     });
@@ -301,6 +303,27 @@ describe('Hardware payments with real PostgreSQL', () => {
     await expect(
       db.getRepository(Account).save({ studentId: student.id }),
     ).rejects.toMatchObject({ driverError: { code: '23505' } });
+  });
+
+  it('maps Student and Account one-to-one and records debit balance audit', async () => {
+    const studentRelation = db
+      .getMetadata(Student)
+      .relations.find((relation) => relation.propertyName === 'account');
+    const accountRelation = db
+      .getMetadata(Account)
+      .relations.find((relation) => relation.propertyName === 'student');
+    expect(studentRelation?.isOneToOne).toBe(true);
+    expect(accountRelation?.isOneToOne).toBe(true);
+
+    const loadedStudent = await students.findById(student.id);
+    expect(loadedStudent.account?.id).toBe(account.id);
+
+    const response = await pay().expect(200);
+    expect(response.body.data).toMatchObject({
+      balanceBefore: 100000,
+      balanceAfter: 75000,
+    });
+    expect(await balance()).toBe(75000);
   });
 
   it('provisions a Student stub and physical Card without Account or password', async () => {
@@ -527,12 +550,26 @@ describe('Hardware payments with real PostgreSQL', () => {
   });
 
   it('upgrades an existing wallet without losing its daily counter', async () => {
+    await db.undoLastMigration(); // TransactionBalanceAudit
     await db.undoLastMigration(); // StudentOnboarding
     await db.undoLastMigration(); // RevealArchivedStudents
     await db.undoLastMigration(); // ArchiveStudentWallets
     await db.undoLastMigration(); // PrepareHardwareIntegration
     await db.query('UPDATE accounts SET "dailySpent" = 1234');
     await db.query(`UPDATE cards SET uid = '00:a1:b2:c3'`);
+    await db.query(
+      `INSERT INTO transactions
+        (amount, type, status, "idempotencyKey", "studentCode", "studentId", "accountId", "merchantId")
+       VALUES ($1, 'debit', 'success', $2, $3, $4, $5, $6)`,
+      [
+        1000,
+        'legacy-audit-transaction',
+        student.studentCode,
+        student.id,
+        account.id,
+        merchant.id,
+      ],
+    );
     await db.runMigrations();
     const wallet = await db
       .getRepository(Account)
@@ -542,6 +579,11 @@ describe('Hardware payments with real PostgreSQL', () => {
     expect(
       (await db.getRepository(Card).findOneByOrFail({ id: card.id })).uid,
     ).toBe('00A1B2C3');
+    expect(
+      await db
+        .getRepository(Transaction)
+        .findOneByOrFail({ idempotencyKey: 'legacy-audit-transaction' }),
+    ).toMatchObject({ balanceBefore: null, balanceAfter: null });
   });
 
   it('replays after a lost response and after card lock without a second debit', async () => {
@@ -794,6 +836,13 @@ describe('Hardware payments with real PostgreSQL', () => {
     expect(await balance()).toBe(150000);
     expect(await db.getRepository(Transaction).count()).toBe(1);
     expect(await db.getRepository(TopupPending).count()).toBe(1);
+    expect(
+      await db.getRepository(Transaction).findOneByOrFail({}),
+    ).toMatchObject({
+      type: TransactionType.CREDIT,
+      balanceBefore: 100000,
+      balanceAfter: 150000,
+    });
   });
 
   it('serializes topup and pay on the same wallet', async () => {
@@ -802,6 +851,25 @@ describe('Hardware payments with real PostgreSQL', () => {
       payments.payByCard(card.uid, merchant.id, 25000, randomUUID()),
     ]);
     expect(await balance()).toBe(125000);
+    const transactions = await db.getRepository(Transaction).find();
+    expect(transactions).toHaveLength(2);
+    for (const tx of transactions) {
+      expect(tx.balanceBefore).not.toBeNull();
+      expect(tx.balanceAfter).toBe(
+        tx.type === TransactionType.CREDIT
+          ? tx.balanceBefore! + tx.amount
+          : tx.balanceBefore! - tx.amount,
+      );
+    }
+    expect(
+      transactions.some((first) =>
+        transactions.some(
+          (second) =>
+            first.id !== second.id &&
+            first.balanceAfter === second.balanceBefore,
+        ),
+      ),
+    ).toBe(true);
   });
 
   it('queues a second transfer into an already used QR', async () => {

@@ -36,7 +36,7 @@ export interface Student {
   profileCompletedAt: string | null;
   createdAt: string;
   updatedAt: string;
-  accounts?: Account[];
+  account?: Account | null;
   cards?: Card[];
 }
 
@@ -91,6 +91,8 @@ export type TransactionStatus = "pending" | "success" | "failed" | "refunded";
 export interface Transaction {
   id: string;
   amount: number;
+  balanceBefore: number | null;
+  balanceAfter: number | null;
   type: TransactionType;
   status: TransactionStatus;
   idempotencyKey: string;

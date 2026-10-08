@@ -50,7 +50,7 @@ export class CardsService {
   async findByUid(uid: string): Promise<Card> {
     const card = await this.repo.findOne({
       where: { uid: normalizeUid(uid) },
-      relations: { student: { accounts: true } },
+      relations: { student: { account: true } },
     });
     if (!card) throw new NotFoundException('Card not found');
     return card;

@@ -117,7 +117,7 @@ export class StudentsService {
     const qb = this.repo
       .createQueryBuilder('student')
       .leftJoinAndSelect('student.cards', 'cards')
-      .leftJoinAndSelect('student.accounts', 'accounts');
+      .leftJoinAndSelect('student.account', 'account');
 
     if (search && search.trim()) {
       const term = `%${search.trim()}%`;
@@ -146,7 +146,7 @@ export class StudentsService {
   async findById(id: string): Promise<Student> {
     const student = await this.repo.findOne({
       where: { id },
-      relations: { cards: true, accounts: true },
+      relations: { cards: true, account: true },
     });
     if (!student) throw new NotFoundException('Không tìm thấy sinh viên');
     return student;
@@ -155,7 +155,7 @@ export class StudentsService {
   async findMyProfile(studentId: string): Promise<Student> {
     const student = await this.repo.findOne({
       where: { id: studentId },
-      relations: { cards: true, accounts: true },
+      relations: { cards: true, account: true },
     });
     if (!student) throw new NotFoundException('Không tìm thấy sinh viên');
     return student;
@@ -244,7 +244,7 @@ export class StudentsService {
           studentCode: code.trim().toUpperCase(),
         }),
       },
-      relations: { cards: true, accounts: true },
+      relations: { cards: true, account: true },
     });
   }
 

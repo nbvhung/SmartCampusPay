@@ -79,6 +79,8 @@ describe('SePay transfer inbox', () => {
     });
     expect(account.balance).toBe(51000);
     expect(qr.idempotencyKey).toBe('sepay_102');
+    expect(qr.balanceBefore).toBe(1000);
+    expect(qr.balanceAfter).toBe(51000);
     expect(inbox.status).toBe(TopupPendingStatus.MATCHED);
     expect(inbox.transactionId).toBe('qr-1');
   });

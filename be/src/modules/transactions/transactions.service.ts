@@ -152,13 +152,16 @@ export class TransactionsService {
     if (account.dailySpent + dto.amount > account.dailyLimit)
       throw new BadRequestException('Daily limit exceeded');
 
-    account.balance -= dto.amount;
+    const balanceBefore = account.balance;
+    account.balance = balanceBefore - dto.amount;
     account.dailySpent += dto.amount;
     await manager.save(account);
 
     return manager.save(
       manager.create(Transaction, {
         amount: dto.amount,
+        balanceBefore,
+        balanceAfter: account.balance,
         type: TransactionType.DEBIT,
         status: TransactionStatus.SUCCESS,
         idempotencyKey: dto.idempotencyKey,

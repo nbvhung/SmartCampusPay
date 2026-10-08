@@ -15,6 +15,7 @@ import { TransformInterceptor } from '../src/common/interceptors/transform.inter
 import { ArchiveStudentWallets1791043200000 } from '../src/database/migrations/1791043200000-ArchiveStudentWallets';
 import { RevealArchivedStudents1791129600000 } from '../src/database/migrations/1791129600000-RevealArchivedStudents';
 import { StudentOnboarding1791216000000 } from '../src/database/migrations/1791216000000-StudentOnboarding';
+import { TransactionBalanceAudit1791302400000 } from '../src/database/migrations/1791302400000-TransactionBalanceAudit';
 import { Initial1785125994312 } from '../src/database/migrations/1785125994312-Initial';
 import { HardenMoneyPath1790323200000 } from '../src/database/migrations/1790323200000-HardenMoneyPath';
 import { PrepareHardwareIntegration1790899200000 } from '../src/database/migrations/1790899200000-PrepareHardwareIntegration';
@@ -100,6 +101,7 @@ describe('Student registration completion with PostgreSQL and Redis', () => {
         ArchiveStudentWallets1791043200000,
         RevealArchivedStudents1791129600000,
         StudentOnboarding1791216000000,
+        TransactionBalanceAudit1791302400000,
       ],
       synchronize: false,
     });
