@@ -146,14 +146,16 @@ Flow: SV quẹt thẻ trên thiết bị → thiết bị tạo QR riêng (chứ
 **Request** (2 cách, ưu tiên `cardUid`):
 
 ```json
-{ "cardUid": "A1B2C3D4" }
+{ "cardUid": "A1B2C3D4", "amount": 50000 }
 ```
 
 hoặc
 
 ```json
-{ "studentCode": "20210012" }
+{ "studentCode": "20210012", "amount": 50000 }
 ```
+
+`amount` là số nguyên VND bắt buộc, từ **1.000đ đến 5.000.000đ**. Chỉ gửi một trong hai trường định danh `cardUid` hoặc `studentCode`.
 
 **Response:**
 
@@ -162,8 +164,8 @@ hoặc
   "success": true,
   "data": {
     "referenceCode": "SCP20210012AB12CD",
-    "qrUrl": "https://qr.sepay.vn/img?acc=...&bank=970422&des=SCP20210012AB12CD",
-    "amount": 0,
+    "qrUrl": "https://qr.sepay.vn/img?acc=...&bank=970422&des=SCP20210012AB12CD&amount=50000",
+    "amount": 50000,
     "expiresAt": "2026-08-02T10:30:00.000Z"
   },
   "timestamp": "..."
@@ -172,7 +174,7 @@ hoặc
 
 Ghi chú:
 
-- `amount = 0` nghĩa là **QR không gắn số tiền cố định** — SV tự nhập số tiền khi chuyển.
+- QR động luôn gắn đúng `amount`; webhook chuyển sai số tiền sẽ vào hàng đợi đối soát và không tự cộng ví.
 - Hiển thị `qrUrl` lên màn hình (render QR bằng thư viện `qrcodegen`).
 - Sau khi SV chuyển khoản, thiết bị **poll** endpoint 4.5 đến khi `status = success` hoặc hết hạn.
 
@@ -244,11 +246,13 @@ SV quét → **phải ghi mã SV vào nội dung chuyển khoản** → backend 
 
 ```
 1. Màn hình: "Nạp tiền — quẹt thẻ"
-2. SV quẹt thẻ → POST /hardware/topup/qr { cardUid }
-3. Hiện QR + "Quét bằng app ngân hàng, nhập số tiền rồi chuyển"
-4. Poll GET /hardware/topup/status/:refCode mỗi 3-5s
-5. status = success → hiện số dư + voice "Nạp tiền thành công"
-6. Hết hạn (30 phút) → quay lại màn hình chờ
+2. SV quẹt thẻ → thiết bị nhận diện sinh viên
+3. SV chọn số tiền nạp trên thiết bị
+4. POST /hardware/topup/qr { cardUid, amount }
+5. Hiện QR đã gắn sẵn số tiền và nội dung SCP reference
+6. Poll GET /hardware/topup/status/:refCode mỗi 3-5s
+7. status = success → hiện số tiền, số dư + voice "Nạp tiền thành công"
+8. Hết hạn (30 phút) → quay lại màn hình chờ
 ```
 
 ### 5.3. Nạp tiền — QR tĩnh (theo yêu cầu hội đồng)

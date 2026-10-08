@@ -772,13 +772,36 @@ describe('Hardware payments with real PostgreSQL', () => {
     expect(result.body.data.balance).toBe(100000);
   });
 
-  it('scopes device QR status to the merchant and expires the QR on server', async () => {
+  it('creates fixed-amount dynamic QR for a device and scopes status to its merchant', async () => {
     const created = await request(app.getHttpServer())
       .post('/api/v1/hardware/topup/qr')
       .set('X-API-Key', apiKey)
-      .send({ cardUid: card.uid })
+      .send({ cardUid: card.uid, amount: 50000 })
       .expect(200);
     const ref = created.body.data.referenceCode;
+    expect(created.body.data.amount).toBe(50000);
+    const qrUrl = new URL(created.body.data.qrUrl);
+    expect(qrUrl.searchParams.get('amount')).toBe('50000');
+    expect(qrUrl.searchParams.get('des')).toBe(ref);
+    await expect(
+      db.getRepository(Transaction).findOneByOrFail({ referenceCode: ref }),
+    ).resolves.toMatchObject({
+      amount: 50000,
+      merchantId: merchant.id,
+      status: TransactionStatus.PENDING,
+    });
+
+    const pendingStatus = await request(app.getHttpServer())
+      .get(`/api/v1/hardware/topup/status/${ref}`)
+      .set('X-API-Key', apiKey)
+      .expect(200);
+    expect(pendingStatus.body.data).toMatchObject({
+      status: 'pending',
+      amount: 50000,
+      balance: 100000,
+      studentCode: student.studentCode,
+    });
+
     await db
       .getRepository(Transaction)
       .update({ referenceCode: ref }, { expiresAt: new Date(0) });
@@ -794,6 +817,67 @@ describe('Hardware payments with real PostgreSQL', () => {
       .get(`/api/v1/hardware/topup/status/${ref}`)
       .set('X-API-Key', 'other-key')
       .expect(404);
+  });
+
+  it.each([
+    [{ cardUid: '00A1B2C3' }, 400],
+    [{ cardUid: '00A1B2C3', amount: 999 }, 400],
+    [{ cardUid: '00A1B2C3', amount: 5000001 }, 400],
+    [{ cardUid: '00A1B2C3', amount: 25000.5 }, 400],
+  ])('rejects an invalid device top-up request %#', async (body, status) => {
+    await request(app.getHttpServer())
+      .post('/api/v1/hardware/topup/qr')
+      .set('X-API-Key', apiKey)
+      .send(body)
+      .expect(status);
+    expect(await db.getRepository(Transaction).count()).toBe(0);
+  });
+
+  it('keeps student dynamic QR fixed-amount and static QR amount-free', async () => {
+    const dynamic = await sepay.createPayment(student.studentCode, 75000);
+    const dynamicUrl = new URL(dynamic.qrUrl);
+    expect(dynamic.amount).toBe(75000);
+    expect(dynamicUrl.searchParams.get('amount')).toBe('75000');
+    expect(dynamicUrl.searchParams.get('des')).toBe(dynamic.referenceCode);
+
+    const status = await sepay.checkStatus(dynamic.referenceCode, {
+      id: student.id,
+      role: 'student',
+    });
+    expect(status).toMatchObject({ status: 'pending', amount: 75000 });
+
+    const staticQr = sepay.createStaticQr();
+    const staticUrl = new URL(staticQr.qrUrl);
+    expect(staticUrl.searchParams.has('amount')).toBe(false);
+    expect(staticUrl.searchParams.get('des')).toBe(staticQr.description);
+  });
+
+  it('credits a fixed device QR exactly once and returns the settled balance', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/hardware/topup/qr')
+      .set('X-API-Key', apiKey)
+      .send({ studentCode: student.studentCode, amount: 40000 })
+      .expect(200);
+    const ref = created.body.data.referenceCode;
+
+    await Promise.all([
+      sepay.handleWebhook(webhook(501, ref, 40000)),
+      sepay.handleWebhook(webhook(501, ref, 40000)),
+    ]);
+
+    const status = await request(app.getHttpServer())
+      .get(`/api/v1/hardware/topup/status/${ref}`)
+      .set('X-API-Key', apiKey)
+      .expect(200);
+    expect(status.body.data).toMatchObject({
+      status: 'success',
+      amount: 40000,
+      balance: 140000,
+      studentCode: student.studentCode,
+    });
+    expect(await balance()).toBe(140000);
+    expect(await db.getRepository(Transaction).count()).toBe(1);
+    expect(await db.getRepository(TopupPending).count()).toBe(1);
   });
 
   it('returns only the authenticated student transactions regardless of requested code', async () => {

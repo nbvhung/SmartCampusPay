@@ -109,7 +109,8 @@ enum State {
   STATE_WIFI_CONNECTING,   // Kết nối WiFi lúc khởi động
   STATE_IDLE,              // Chờ quẹt thẻ (hiện QR tĩnh)
   STATE_CARD_DETECTED,     // Đã đọc thẻ, hiện tên SV, chờ chọn mode
-  STATE_SELECT_AMOUNT,     // Chọn số tiền (5 preset)
+  STATE_SELECT_AMOUNT,     // Chọn số tiền thanh toán (5 preset)
+  STATE_SELECT_TOPUP_AMOUNT, // Chọn số tiền nạp trước khi tạo QR
   STATE_PROCESSING,        // Đang gọi API thanh toán
   STATE_RESULT,            // Hiện kết quả thành công / thất bại
   STATE_TOPUP_QR,          // Hiện QR nạp tiền, chờ SV chuyển khoản
@@ -139,6 +140,7 @@ String  currentFullName    = "";
 long    currentBalance     = 0;
 String  currentRefCode     = "";
 int     selectedAmountIdx  = 0;    // Index trong mảng preset amounts
+long    currentTopupAmount = 0;
 
 // Thời gian
 unsigned long stateEnteredAt    = 0;
@@ -394,9 +396,9 @@ void showCardDetected(const String& name, long balance) {
   tftCenteredText("Giu BTN3 de huy", 206, C_GRAY, 1);
 }
 
-void showSelectAmount(int selected) {
+void showSelectAmount(int selected, const char* title = "Chon so tien") {
   tftClear();
-  tftHeader("Chon so tien");
+  tftHeader(title);
 
   int y = 44;
   for (int i = 0; i < NUM_AMOUNTS; i++) {
@@ -481,11 +483,13 @@ void showResult(bool success, const char* message, long newBalance = -1) {
   tftCenteredText("Tiep tuc sau 3 giay...", 210, C_GRAY, 1);
 }
 
-void showTopupQR(const String& refCode) {
+void showTopupQR(const String& refCode, long amount) {
   tftClear();
   tftHeader("Nap tien QR");
   tftCenteredText("Quet QR bang app ngan hang", 44, C_WHITE, 1);
-  tftCenteredText("(So tien tu nhap)", 58, C_GRAY, 1);
+  char amountText[32];
+  snprintf(amountText, sizeof(amountText), "So tien: %ld d", amount);
+  tftCenteredText(amountText, 58, C_YELLOW, 1);
 
   // QR placeholder — thay bằng qrcodegen thật
   tft.drawRoundRect(60, 70, 200, 130, 8, C_WHITE);
@@ -719,25 +723,27 @@ PayResult doPayment(const String& uid, long amount) {
   return result;
 }
 
-struct TopupQrResult { bool success; String refCode; String qrUrl; };
+struct TopupQrResult { bool success; String refCode; String qrUrl; long amount; };
 
-TopupQrResult startTopupQr(const String& uid) {
+TopupQrResult startTopupQr(const String& uid, long amount) {
   StaticJsonDocument<128> body;
   body["cardUid"] = uid;
+  body["amount"] = amount;
   String payload;
   serializeJson(body, payload);
 
   String resp = apiRequest("POST", "/hardware/topup/qr", payload);
-  TopupQrResult result = {false, "", ""};
+  TopupQrResult result = {false, "", "", 0};
   if (resp.length() == 0) return result;
 
   StaticJsonDocument<512> doc;
   if (deserializeJson(doc, resp) != DeserializationError::Ok) return result;
   if (!(doc["success"] | false)) return result;
 
-  result.success = true;
   result.refCode = doc["data"]["referenceCode"] | "";
   result.qrUrl   = doc["data"]["qrUrl"]         | "";
+  result.amount  = doc["data"]["amount"]        | 0;
+  result.success = result.refCode.length() > 0 && result.amount == amount;
   return result;
 }
 
@@ -821,6 +827,7 @@ void transitionToIdle() {
   currentBalance     = 0;
   currentRefCode     = "";
   selectedAmountIdx  = 0;
+  currentTopupAmount = 0;
   enterState(STATE_IDLE);
   showIdle();
   playTrack(VOICE_READY);
@@ -991,25 +998,14 @@ void loop() {
       if (payPressed) {
         selectedAmountIdx = 0;
         enterState(STATE_SELECT_AMOUNT);
-        showSelectAmount(selectedAmountIdx);
+        showSelectAmount(selectedAmountIdx, "Tien thanh toan");
         break;
       }
-      // BTN_TOPUP → nạp tiền
+      // BTN_TOPUP → chọn số tiền nạp trước khi tạo QR
       if (topupPressed) {
-        enterState(STATE_PROCESSING);
-        showProcessing("Tao QR nap tien...");
-
-        TopupQrResult qr = startTopupQr(currentCardUid);
-        if (!qr.success || qr.refCode.length() == 0) {
-          showError("Khong tao duoc QR");
-          delay(2000);
-          transitionToIdle();
-          break;
-        }
-        currentRefCode = qr.refCode;
-        enterState(STATE_TOPUP_QR);
-        showTopupQR(currentRefCode);
-        playTrack(VOICE_READY);
+        selectedAmountIdx = 0;
+        enterState(STATE_SELECT_TOPUP_AMOUNT);
+        showSelectAmount(selectedAmountIdx, "Tien nap");
         break;
       }
       // Cancel hoặc timeout 30 giây
@@ -1023,13 +1019,13 @@ void loop() {
       // BTN_PAY → scroll lên (giảm index)
       if (payPressed) {
         selectedAmountIdx = (selectedAmountIdx - 1 + NUM_AMOUNTS) % NUM_AMOUNTS;
-        showSelectAmount(selectedAmountIdx);
+        showSelectAmount(selectedAmountIdx, "Tien thanh toan");
         break;
       }
       // BTN_TOPUP → scroll xuống (tăng index)
       if (topupPressed) {
         selectedAmountIdx = (selectedAmountIdx + 1) % NUM_AMOUNTS;
-        showSelectAmount(selectedAmountIdx);
+        showSelectAmount(selectedAmountIdx, "Tien thanh toan");
         break;
       }
       // BTN_CONFIRM → xác nhận số tiền đã chọn → thanh toán
@@ -1085,6 +1081,41 @@ void loop() {
       break;
 
     // ────────────────────────────────────────────────────────────────────
+    case STATE_SELECT_TOPUP_AMOUNT:
+      if (payPressed) {
+        selectedAmountIdx = (selectedAmountIdx - 1 + NUM_AMOUNTS) % NUM_AMOUNTS;
+        showSelectAmount(selectedAmountIdx, "Tien nap");
+        break;
+      }
+      if (topupPressed) {
+        selectedAmountIdx = (selectedAmountIdx + 1) % NUM_AMOUNTS;
+        showSelectAmount(selectedAmountIdx, "Tien nap");
+        break;
+      }
+      if (confirmPressed) {
+        currentTopupAmount = AMOUNTS[selectedAmountIdx];
+        enterState(STATE_PROCESSING);
+        showProcessing("Tao QR nap tien...");
+
+        TopupQrResult qr = startTopupQr(currentCardUid, currentTopupAmount);
+        if (!qr.success) {
+          showError("Khong tao duoc QR");
+          delay(2000);
+          transitionToIdle();
+          break;
+        }
+        currentRefCode = qr.refCode;
+        enterState(STATE_TOPUP_QR);
+        showTopupQR(currentRefCode, currentTopupAmount);
+        playTrack(VOICE_READY);
+        break;
+      }
+      if (cancelPressed || now - stateEnteredAt > 30000) {
+        transitionToIdle();
+      }
+      break;
+
+    // ────────────────────────────────────────────────────────────────────
     case STATE_PROCESSING:
       // Màn hình processing — không nhận input
       // Chỉ update animation spinner
@@ -1127,7 +1158,7 @@ void loop() {
 
       // Vẽ màn hình QR (chỉ lần đầu vào state)
       if (prevState != STATE_TOPUP_POLLING) {
-        showTopupQR(currentRefCode);
+        showTopupQR(currentRefCode, currentTopupAmount);
       }
 
       // Poll mỗi POLL_INTERVAL_MS

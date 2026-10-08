@@ -74,7 +74,11 @@ export class HardwareDeviceService {
     expiresAt: string;
   }> {
     const studentCode = await this.resolveStudentCode(body);
-    return this.sepayService.createDevicePayment(studentCode, merchantId);
+    return this.sepayService.createDevicePayment(
+      studentCode,
+      merchantId,
+      body.amount,
+    );
   }
 
   async getTopupStatus(

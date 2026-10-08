@@ -187,6 +187,7 @@ export class SePayService {
   async createDevicePayment(
     studentCode: string,
     merchantId: string,
+    amount: number,
   ): Promise<{
     referenceCode: string;
     qrUrl: string;
@@ -195,15 +196,15 @@ export class SePayService {
   }> {
     const student = await this.studentsService.findByCode(studentCode);
     if (!student) throw new BadRequestException('Sinh viên không tồn tại');
+    validateTopupAmount(amount);
     if (!student.isActive) throw new BadRequestException('Sinh viên bị khóa');
 
     const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
     const refCode = this.generateRefCode(studentCode);
-    // amount = 0 → QR không gắn số tiền cố định, SV tự nhập khi chuyển khoản
-    const qrUrl = this.getQrUrl(0, refCode);
+    const qrUrl = this.getQrUrl(amount, refCode);
 
     await this.txRepo.save({
-      amount: 0,
+      amount,
       type: TransactionType.CREDIT,
       status: TransactionStatus.PENDING,
       idempotencyKey: `sepay_${refCode}`,
@@ -219,7 +220,7 @@ export class SePayService {
     return {
       referenceCode: refCode,
       qrUrl,
-      amount: 0,
+      amount,
       expiresAt: expiresAt.toISOString(),
     };
   }
