@@ -6,18 +6,21 @@ import axios from 'axios';
 import { PtitBrand } from '@/components/ui/ptit-brand';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { authApi } from '@/lib/auth-api';
+import { useAuth } from '@/contexts/auth-context';
 
 export default function ChangePasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const router = useRouter();
+  const { user, setUser, setMustChangePassword } = useAuth();
 
   async function handleSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError('');
 
     const form = e.currentTarget;
+    const oldPassword = (form.elements.namedItem('oldPassword') as HTMLInputElement).value;
     const newPassword = (form.elements.namedItem('newPassword') as HTMLInputElement).value;
     const confirmPassword = (form.elements.namedItem('confirmPassword') as HTMLInputElement).value;
 
@@ -29,15 +32,22 @@ export default function ChangePasswordPage() {
       setError('Mật khẩu phải có ít nhất 6 ký tự');
       return;
     }
+    if (oldPassword === newPassword) {
+      setError('Mật khẩu mới phải khác mật khẩu hiện tại');
+      return;
+    }
 
     setIsLoading(true);
     try {
-      await authApi.changePassword({ newPassword });
+      await authApi.changePassword({ oldPassword, newPassword });
+      setUser(null);
+      setMustChangePassword(false);
       setSuccess(true);
-      setTimeout(() => router.push('/login'), 2000);
+      const loginPath = user?.role === 'admin' || user?.role === 'super_admin' ? '/login/admin' : '/login/student';
+      setTimeout(() => router.replace(loginPath), 2000);
     } catch (err: unknown) {
-      const msg = axios.isAxiosError(err) ? err.response?.data?.message || 'Đổi mật khẩu thất bại' : 'Đổi mật khẩu thất bại';
-      setError(msg);
+      const message = axios.isAxiosError<{ message?: string | string[] }>(err) ? err.response?.data?.message : undefined;
+      setError(Array.isArray(message) ? message.join('. ') : message || 'Đổi mật khẩu thất bại');
     } finally {
       setIsLoading(false);
     }
@@ -64,6 +74,22 @@ export default function ChangePasswordPage() {
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label htmlFor="oldPassword" className="block text-sm font-medium text-gray-700 mb-2">
+                Mật khẩu hiện tại
+              </label>
+              <input
+                id="oldPassword"
+                name="oldPassword"
+                type="password"
+                required
+                autoComplete="current-password"
+                placeholder="Nhập mật khẩu đang sử dụng"
+                disabled={isLoading}
+                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 transition"
+              />
+            </div>
+
             <div>
               <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 mb-2">
                 Mật khẩu mới
