@@ -2,6 +2,15 @@ import api from "./axios";
 import type { ApiResponse, Student } from "@/types";
 
 export const studentApi = {
+  getMe: () => api.get<ApiResponse<Student>>("/students/me"),
+
+  updateMe: (data: {
+    fullName?: string;
+    email?: string;
+    faculty?: string;
+    dateOfBirth?: string;
+  }) => api.patch<ApiResponse<Student>>("/students/me", data),
+
   list: (params?: {
     page?: number;
     limit?: number;

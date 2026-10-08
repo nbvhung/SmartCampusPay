@@ -21,8 +21,15 @@ import { StudentsService } from './students.service';
 import { AccountsService } from '../accounts/accounts.service';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
+import { UpdateMyProfileDto } from './dto/update-my-profile.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+
+interface StudentCurrentUser {
+  id: string;
+  role: 'student';
+}
 
 @Controller('students')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -45,6 +52,21 @@ export class StudentsController {
     @Query('isActive') isActive?: string,
   ) {
     return this.service.findAll({ search, faculty, isActive });
+  }
+
+  @Get('me')
+  @Roles('student')
+  findMyProfile(@CurrentUser() user: StudentCurrentUser) {
+    return this.service.findMyProfile(user.id);
+  }
+
+  @Patch('me')
+  @Roles('student')
+  updateMyProfile(
+    @CurrentUser() user: StudentCurrentUser,
+    @Body() dto: UpdateMyProfileDto,
+  ) {
+    return this.service.updateMyProfile(user.id, dto);
   }
 
   @Get(':id')

@@ -28,8 +28,8 @@ export class Student {
   @Column({ type: 'varchar', unique: true, length: 100, nullable: true })
   email: string | null;
 
-  @Column({ length: 15, nullable: true })
-  phone: string;
+  @Column({ type: 'varchar', length: 15, nullable: true })
+  phone: string | null;
 
   @Column({ type: 'varchar', length: 50, nullable: true })
   faculty: string | null;
@@ -38,7 +38,7 @@ export class Student {
   isActive: boolean;
 
   @Column({ type: 'date', nullable: true })
-  dateOfBirth: Date;
+  dateOfBirth: Date | null;
 
   @Column({ default: true })
   mustChangePassword: boolean;

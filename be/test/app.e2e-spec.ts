@@ -48,6 +48,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { HardwareDeviceController } from '../src/modules/hardware-device/hardware-device.controller';
 import { HardwareDeviceService } from '../src/modules/hardware-device/hardware-device.service';
 import { StudentsService } from '../src/modules/students/students.service';
+import { StudentsController } from '../src/modules/students/students.controller';
 
 config({ quiet: true });
 jest.setTimeout(60000);
@@ -140,10 +141,16 @@ describe('Hardware payments with real PostgreSQL', () => {
       redisFallback as any,
     );
     const module = await Test.createTestingModule({
-      controllers: [TransactionsController, HardwareDeviceController],
+      controllers: [
+        TransactionsController,
+        HardwareDeviceController,
+        StudentsController,
+      ],
       providers: [
         RolesGuard,
         ApiKeyGuard,
+        { provide: StudentsService, useValue: students },
+        { provide: AccountsService, useValue: accounts },
         { provide: TransactionsService, useValue: payments },
         {
           provide: HardwareDeviceService,
@@ -389,6 +396,134 @@ describe('Hardware payments with real PostgreSQL', () => {
       registeredAt: null,
       profileCompletedAt: null,
     });
+  });
+
+  it('returns only the authenticated student profile', async () => {
+    const other = await db.getRepository(Student).save({
+      studentCode: 'B23DCCN999',
+      fullName: 'Other Student',
+      email: 'other@example.test',
+      faculty: 'Other',
+      mustChangePassword: false,
+    });
+
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/students/me')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .expect(200);
+
+    expect(response.body.data).toMatchObject({
+      id: student.id,
+      studentCode: student.studentCode,
+      phone: null,
+    });
+    expect(response.body.data.id).not.toBe(other.id);
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/students/${other.id}`)
+      .set('Authorization', `Bearer ${studentToken}`)
+      .expect(403);
+    await request(app.getHttpServer())
+      .get('/api/v1/students/me')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(403);
+  });
+
+  it('rejects readonly fields in the self-profile endpoint', async () => {
+    await request(app.getHttpServer())
+      .patch('/api/v1/students/me')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({
+        studentId: randomUUID(),
+        studentCode: 'CHANGED',
+        phone: '0999999999',
+        fullName: 'Allowed field mixed with forbidden fields',
+      })
+      .expect(400);
+
+    const unchanged = await db
+      .getRepository(Student)
+      .findOneByOrFail({ id: student.id });
+    expect(unchanged).toMatchObject({
+      studentCode: 'B23DCCN358',
+      phone: null,
+      fullName: 'Test Student',
+    });
+  });
+
+  it.each([
+    [{}, 'empty update'],
+    [{ fullName: '   ' }, 'blank full name'],
+    [{ email: 'not-an-email' }, 'invalid email'],
+    [{ faculty: '   ' }, 'blank faculty'],
+    [{ dateOfBirth: '2050-01-01' }, 'future date of birth'],
+  ])('rejects invalid self-profile data: %s (%s)', async (body) => {
+    await request(app.getHttpServer())
+      .patch('/api/v1/students/me')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send(body)
+      .expect(400);
+  });
+
+  it('rejects a duplicate email case-insensitively', async () => {
+    await db.getRepository(Student).save({
+      studentCode: 'B23DCCN998',
+      fullName: 'Email Owner',
+      email: 'owner@example.test',
+      faculty: 'Other',
+      mustChangePassword: false,
+    });
+
+    const response = await request(app.getHttpServer())
+      .patch('/api/v1/students/me')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({ email: ' OWNER@EXAMPLE.TEST ' })
+      .expect(409);
+
+    expect(response.body.message).toBe('Email đã được sử dụng');
+  });
+
+  it('sets profileCompletedAt once only after every required field exists', async () => {
+    await db.getRepository(Student).update(student.id, {
+      fullName: null,
+      email: null,
+      faculty: null,
+      dateOfBirth: null,
+      profileCompletedAt: null,
+    });
+
+    const partial = await request(app.getHttpServer())
+      .patch('/api/v1/students/me')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({ fullName: '  Nguyễn Văn A  ' })
+      .expect(200);
+    expect(partial.body.data).toMatchObject({
+      fullName: 'Nguyễn Văn A',
+      profileCompletedAt: null,
+    });
+
+    const completed = await request(app.getHttpServer())
+      .patch('/api/v1/students/me')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({
+        email: ' Student@Example.Test ',
+        faculty: '  Công nghệ thông tin ',
+        dateOfBirth: '2003-10-08',
+      })
+      .expect(200);
+    expect(completed.body.data).toMatchObject({
+      email: 'student@example.test',
+      faculty: 'Công nghệ thông tin',
+      profileCompletedAt: expect.any(String),
+    });
+    const completedAt = completed.body.data.profileCompletedAt;
+
+    const updatedAgain = await request(app.getHttpServer())
+      .patch('/api/v1/students/me')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({ fullName: 'Nguyễn Văn B' })
+      .expect(200);
+    expect(updatedAgain.body.data.profileCompletedAt).toBe(completedAt);
   });
 
   it('upgrades an existing wallet without losing its daily counter', async () => {
