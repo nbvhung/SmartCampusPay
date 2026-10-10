@@ -29,17 +29,13 @@ export const authApi = {
   logout: () =>
     api.post('/auth/logout'),
 
-  /**
-   * Đổi mật khẩu
-   * - mustChangePassword=true: chỉ cần newPassword
-   * - mustChangePassword=false: cần oldPassword + newPassword
-   */
-  changePassword: (data: { oldPassword?: string; newPassword: string }) =>
+  /** Đổi mật khẩu luôn yêu cầu mật khẩu hiện tại và thu hồi session. */
+  changePassword: (data: { oldPassword: string; newPassword: string }) =>
     api.post('/auth/change-password', data),
 
   /**
    * Lấy thông tin user hiện tại
    */
   me: () =>
-    api.get<{ success: boolean; data: AuthUser & { mustChangePassword?: boolean; accounts?: Account[]; cards?: Card[] } }>('/auth/me'),
+    api.get<{ success: boolean; data: AuthUser & { mustChangePassword?: boolean; account?: Account | null; cards?: Card[] } }>('/auth/me'),
 };

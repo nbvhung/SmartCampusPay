@@ -1,6 +1,7 @@
 import { ArchiveStudentWallets1791043200000 } from '../src/database/migrations/1791043200000-ArchiveStudentWallets';
 import { RevealArchivedStudents1791129600000 } from '../src/database/migrations/1791129600000-RevealArchivedStudents';
 import { StudentOnboarding1791216000000 } from '../src/database/migrations/1791216000000-StudentOnboarding';
+import { TransactionBalanceAudit1791302400000 } from '../src/database/migrations/1791302400000-TransactionBalanceAudit';
 import 'reflect-metadata';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -109,6 +110,7 @@ describe('Student top-up claims with PostgreSQL', () => {
         ArchiveStudentWallets1791043200000,
         RevealArchivedStudents1791129600000,
         StudentOnboarding1791216000000,
+        TransactionBalanceAudit1791302400000,
       ],
       synchronize: false,
     });
@@ -363,6 +365,12 @@ describe('Student top-up claims with PostgreSQL', () => {
     });
     expect(await balance()).toBe(150000);
     expect(await db.getRepository(Transaction).count()).toBe(1);
+    expect(
+      await db.getRepository(Transaction).findOneByOrFail({}),
+    ).toMatchObject({
+      balanceBefore: 100000,
+      balanceAfter: 150000,
+    });
     expect(
       (await db.getRepository(TopupPending).findOneByOrFail({ id: pending.id }))
         .status,

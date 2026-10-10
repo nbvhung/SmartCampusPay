@@ -261,7 +261,7 @@ export default function AdminStudentsPage() {
       key: "registeredAt",
       header: "Đăng ký",
       render: (s) => {
-        const legacy = !s.registeredAt && Boolean(s.accounts?.length);
+        const legacy = !s.registeredAt && Boolean(s.account);
         return (
           <span
             className={`px-2 py-0.5 rounded-full text-xs font-medium ${

@@ -84,6 +84,8 @@ describe('TransactionsService money path', () => {
     expect(savedAccount.dailySpent).toBe(35_000);
     expect(result).toMatchObject({
       amount: 25_000,
+      balanceBefore: 100_000,
+      balanceAfter: 75_000,
       merchantId,
       status: TransactionStatus.SUCCESS,
       type: TransactionType.DEBIT,

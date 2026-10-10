@@ -124,11 +124,14 @@ export class TopupPendingService {
 
     if (account.balance + pending.amount > 2147483647)
       throw new BadRequestException('Balance overflow');
-    account.balance += pending.amount;
+    const balanceBefore = account.balance;
+    account.balance = balanceBefore + pending.amount;
     await manager.save(account);
 
     const tx = manager.create(Transaction, {
       amount: pending.amount,
+      balanceBefore,
+      balanceAfter: account.balance,
       type: TransactionType.CREDIT,
       status: TransactionStatus.SUCCESS,
       idempotencyKey: idemKey,

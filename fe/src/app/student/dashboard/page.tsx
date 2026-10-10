@@ -17,7 +17,7 @@ export default function StudentDashboardPage() {
   const [recentTxs, setRecentTxs] = useState<Transaction[]>([]);
 
   const student = user as Student | null;
-  const balance = student?.accounts?.[0]?.balance ?? 0;
+  const balance = student?.account?.balance ?? 0;
 
   useEffect(() => {
     if (!user || !('studentCode' in user)) return;

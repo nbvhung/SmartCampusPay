@@ -113,15 +113,19 @@ export class TransactionsService {
     if (!student || !student.isActive)
       throw new BadRequestException('Invalid student');
 
+    let paymentCard: Card | null = null;
     if (dto.cardUid) {
-      const card = await manager.findOne(Card, {
+      paymentCard = await manager.findOne(Card, {
         where: { uid: dto.cardUid },
-        lock: { mode: 'pessimistic_read' },
+        // The successful debit also updates lastUsedAt. Take the write lock
+        // up front so concurrent taps cannot deadlock while upgrading a
+        // shared Card lock after one request has locked the wallet.
+        lock: { mode: 'pessimistic_write' },
       });
       if (
-        !card ||
-        card.status !== CardStatus.ACTIVE ||
-        card.studentId !== student.id
+        !paymentCard ||
+        paymentCard.status !== CardStatus.ACTIVE ||
+        paymentCard.studentId !== student.id
       )
         throw new BadRequestException('Card is not active');
     }
@@ -152,13 +156,16 @@ export class TransactionsService {
     if (account.dailySpent + dto.amount > account.dailyLimit)
       throw new BadRequestException('Daily limit exceeded');
 
-    account.balance -= dto.amount;
+    const balanceBefore = account.balance;
+    account.balance = balanceBefore - dto.amount;
     account.dailySpent += dto.amount;
     await manager.save(account);
 
-    return manager.save(
+    const transaction = await manager.save(
       manager.create(Transaction, {
         amount: dto.amount,
+        balanceBefore,
+        balanceAfter: account.balance,
         type: TransactionType.DEBIT,
         status: TransactionStatus.SUCCESS,
         idempotencyKey: dto.idempotencyKey,
@@ -170,6 +177,14 @@ export class TransactionsService {
         cardUid: dto.cardUid ?? null,
       }),
     );
+    if (paymentCard) {
+      await manager.update(
+        Card,
+        { id: paymentCard.id },
+        { lastUsedAt: new Date() },
+      );
+    }
+    return transaction;
   }
 
   private validateIdempotentReplay(
@@ -220,7 +235,7 @@ export class TransactionsService {
       );
     }
     const card = await this.cardsService.findByUid(cardUid);
-    if (card.status !== 'active')
+    if (card.status !== CardStatus.ACTIVE)
       throw new BadRequestException('Card is not active');
     if (!card.student) throw new BadRequestException('Invalid student');
     return this.pay(

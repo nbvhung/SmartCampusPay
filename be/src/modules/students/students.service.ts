@@ -14,7 +14,8 @@ import { Transaction } from '../transactions/transaction.entity';
 import { TopupClaim } from '../topup-claims/topup-claim.entity';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { BulkImportResult, ImportStudentRow } from './dto/import-student.dto';
-import { normalizeUid } from '../../common/utils/payment';
+import { UpdateMyProfileDto } from './dto/update-my-profile.dto';
+import { campusDate, normalizeUid } from '../../common/utils/payment';
 
 interface StudentQuery {
   search?: string;
@@ -116,7 +117,7 @@ export class StudentsService {
     const qb = this.repo
       .createQueryBuilder('student')
       .leftJoinAndSelect('student.cards', 'cards')
-      .leftJoinAndSelect('student.accounts', 'accounts');
+      .leftJoinAndSelect('student.account', 'account');
 
     if (search && search.trim()) {
       const term = `%${search.trim()}%`;
@@ -145,10 +146,95 @@ export class StudentsService {
   async findById(id: string): Promise<Student> {
     const student = await this.repo.findOne({
       where: { id },
-      relations: { cards: true, accounts: true },
+      relations: { cards: true, account: true },
     });
     if (!student) throw new NotFoundException('Không tìm thấy sinh viên');
     return student;
+  }
+
+  async findMyProfile(studentId: string): Promise<Student> {
+    const student = await this.repo.findOne({
+      where: { id: studentId },
+      relations: { cards: true, account: true },
+    });
+    if (!student) throw new NotFoundException('Không tìm thấy sinh viên');
+    return student;
+  }
+
+  async updateMyProfile(
+    studentId: string,
+    dto: UpdateMyProfileDto,
+  ): Promise<Student> {
+    if (
+      dto.fullName === undefined &&
+      dto.email === undefined &&
+      dto.faculty === undefined &&
+      dto.dateOfBirth === undefined
+    ) {
+      throw new BadRequestException('Không có thông tin hồ sơ để cập nhật');
+    }
+
+    try {
+      await this.dataSource.transaction(async (manager) => {
+        const student = await manager.findOne(Student, {
+          where: { id: studentId },
+          lock: { mode: 'pessimistic_write' },
+        });
+        if (!student) throw new NotFoundException('Không tìm thấy sinh viên');
+
+        if (dto.email !== undefined && dto.email !== student.email) {
+          const emailOwner = await manager
+            .createQueryBuilder(Student, 'student')
+            .withDeleted()
+            .where('LOWER(student.email) = :email', { email: dto.email })
+            .andWhere('student.id <> :studentId', { studentId })
+            .getOne();
+          if (emailOwner) throw new ConflictException('Email đã được sử dụng');
+        }
+
+        if (dto.dateOfBirth !== undefined) {
+          const today = campusDate();
+          if (dto.dateOfBirth > today) {
+            throw new BadRequestException('Ngày sinh không thể ở tương lai');
+          }
+        }
+
+        if (dto.fullName !== undefined) student.fullName = dto.fullName;
+        if (dto.email !== undefined) student.email = dto.email;
+        if (dto.faculty !== undefined) student.faculty = dto.faculty;
+        if (dto.dateOfBirth !== undefined) {
+          student.dateOfBirth = new Date(`${dto.dateOfBirth}T00:00:00.000Z`);
+        }
+
+        if (
+          !student.profileCompletedAt &&
+          student.fullName &&
+          student.email &&
+          student.faculty &&
+          student.dateOfBirth
+        ) {
+          student.profileCompletedAt = new Date();
+        }
+
+        await manager.save(student);
+      });
+
+      return this.findMyProfile(studentId);
+    } catch (err: unknown) {
+      if (
+        err instanceof ConflictException ||
+        err instanceof BadRequestException ||
+        err instanceof NotFoundException
+      ) {
+        throw err;
+      }
+      const driverCode = (err as { driverError?: { code?: string } })
+        .driverError?.code;
+      if (driverCode === '23505') {
+        throw new ConflictException('Email đã được sử dụng');
+      }
+      throw err;
+    }
   }
 
   async findByCode(code: string): Promise<Student | null> {
@@ -158,7 +244,7 @@ export class StudentsService {
           studentCode: code.trim().toUpperCase(),
         }),
       },
-      relations: { cards: true, accounts: true },
+      relations: { cards: true, account: true },
     });
   }
 

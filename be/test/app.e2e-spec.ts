@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { ArchiveStudentWallets1791043200000 } from '../src/database/migrations/1791043200000-ArchiveStudentWallets';
 import { RevealArchivedStudents1791129600000 } from '../src/database/migrations/1791129600000-RevealArchivedStudents';
 import { StudentOnboarding1791216000000 } from '../src/database/migrations/1791216000000-StudentOnboarding';
+import { TransactionBalanceAudit1791302400000 } from '../src/database/migrations/1791302400000-TransactionBalanceAudit';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { ConfigService } from '@nestjs/config';
@@ -48,6 +49,7 @@ import { getRepositoryToken } from '@nestjs/typeorm';
 import { HardwareDeviceController } from '../src/modules/hardware-device/hardware-device.controller';
 import { HardwareDeviceService } from '../src/modules/hardware-device/hardware-device.service';
 import { StudentsService } from '../src/modules/students/students.service';
+import { StudentsController } from '../src/modules/students/students.controller';
 
 config({ quiet: true });
 jest.setTimeout(60000);
@@ -106,6 +108,7 @@ describe('Hardware payments with real PostgreSQL', () => {
         ArchiveStudentWallets1791043200000,
         RevealArchivedStudents1791129600000,
         StudentOnboarding1791216000000,
+        TransactionBalanceAudit1791302400000,
       ],
       synchronize: false,
     });
@@ -140,10 +143,16 @@ describe('Hardware payments with real PostgreSQL', () => {
       redisFallback as any,
     );
     const module = await Test.createTestingModule({
-      controllers: [TransactionsController, HardwareDeviceController],
+      controllers: [
+        TransactionsController,
+        HardwareDeviceController,
+        StudentsController,
+      ],
       providers: [
         RolesGuard,
         ApiKeyGuard,
+        { provide: StudentsService, useValue: students },
+        { provide: AccountsService, useValue: accounts },
         { provide: TransactionsService, useValue: payments },
         {
           provide: HardwareDeviceService,
@@ -296,6 +305,31 @@ describe('Hardware payments with real PostgreSQL', () => {
     ).rejects.toMatchObject({ driverError: { code: '23505' } });
   });
 
+  it('maps Student and Account one-to-one and records debit balance audit', async () => {
+    const studentRelation = db
+      .getMetadata(Student)
+      .relations.find((relation) => relation.propertyName === 'account');
+    const accountRelation = db
+      .getMetadata(Account)
+      .relations.find((relation) => relation.propertyName === 'student');
+    expect(studentRelation?.isOneToOne).toBe(true);
+    expect(accountRelation?.isOneToOne).toBe(true);
+
+    const loadedStudent = await students.findById(student.id);
+    expect(loadedStudent.account?.id).toBe(account.id);
+
+    const response = await pay().expect(200);
+    expect(response.body.data).toMatchObject({
+      balanceBefore: 100000,
+      balanceAfter: 75000,
+    });
+    expect(await balance()).toBe(75000);
+    expect(
+      (await db.getRepository(Card).findOneByOrFail({ id: card.id }))
+        .lastUsedAt,
+    ).toBeInstanceOf(Date);
+  });
+
   it('provisions a Student stub and physical Card without Account or password', async () => {
     const provisioned = await students.create({
       studentCode: ' b25dccn001 ',
@@ -391,13 +425,155 @@ describe('Hardware payments with real PostgreSQL', () => {
     });
   });
 
+  it('returns only the authenticated student profile', async () => {
+    const other = await db.getRepository(Student).save({
+      studentCode: 'B23DCCN999',
+      fullName: 'Other Student',
+      email: 'other@example.test',
+      faculty: 'Other',
+      mustChangePassword: false,
+    });
+
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/students/me')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .expect(200);
+
+    expect(response.body.data).toMatchObject({
+      id: student.id,
+      studentCode: student.studentCode,
+      phone: null,
+    });
+    expect(response.body.data.id).not.toBe(other.id);
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/students/${other.id}`)
+      .set('Authorization', `Bearer ${studentToken}`)
+      .expect(403);
+    await request(app.getHttpServer())
+      .get('/api/v1/students/me')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(403);
+  });
+
+  it('rejects readonly fields in the self-profile endpoint', async () => {
+    await request(app.getHttpServer())
+      .patch('/api/v1/students/me')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({
+        studentId: randomUUID(),
+        studentCode: 'CHANGED',
+        phone: '0999999999',
+        fullName: 'Allowed field mixed with forbidden fields',
+      })
+      .expect(400);
+
+    const unchanged = await db
+      .getRepository(Student)
+      .findOneByOrFail({ id: student.id });
+    expect(unchanged).toMatchObject({
+      studentCode: 'B23DCCN358',
+      phone: null,
+      fullName: 'Test Student',
+    });
+  });
+
+  it.each([
+    [{}, 'empty update'],
+    [{ fullName: '   ' }, 'blank full name'],
+    [{ email: 'not-an-email' }, 'invalid email'],
+    [{ faculty: '   ' }, 'blank faculty'],
+    [{ dateOfBirth: '2050-01-01' }, 'future date of birth'],
+  ])('rejects invalid self-profile data: %s (%s)', async (body) => {
+    await request(app.getHttpServer())
+      .patch('/api/v1/students/me')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send(body)
+      .expect(400);
+  });
+
+  it('rejects a duplicate email case-insensitively', async () => {
+    await db.getRepository(Student).save({
+      studentCode: 'B23DCCN998',
+      fullName: 'Email Owner',
+      email: 'owner@example.test',
+      faculty: 'Other',
+      mustChangePassword: false,
+    });
+
+    const response = await request(app.getHttpServer())
+      .patch('/api/v1/students/me')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({ email: ' OWNER@EXAMPLE.TEST ' })
+      .expect(409);
+
+    expect(response.body.message).toBe('Email đã được sử dụng');
+  });
+
+  it('sets profileCompletedAt once only after every required field exists', async () => {
+    await db.getRepository(Student).update(student.id, {
+      fullName: null,
+      email: null,
+      faculty: null,
+      dateOfBirth: null,
+      profileCompletedAt: null,
+    });
+
+    const partial = await request(app.getHttpServer())
+      .patch('/api/v1/students/me')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({ fullName: '  Nguyễn Văn A  ' })
+      .expect(200);
+    expect(partial.body.data).toMatchObject({
+      fullName: 'Nguyễn Văn A',
+      profileCompletedAt: null,
+    });
+
+    const completed = await request(app.getHttpServer())
+      .patch('/api/v1/students/me')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({
+        email: ' Student@Example.Test ',
+        faculty: '  Công nghệ thông tin ',
+        dateOfBirth: '2003-10-08',
+      })
+      .expect(200);
+    expect(completed.body.data).toMatchObject({
+      email: 'student@example.test',
+      faculty: 'Công nghệ thông tin',
+      profileCompletedAt: expect.any(String),
+    });
+    const completedAt = completed.body.data.profileCompletedAt;
+
+    const updatedAgain = await request(app.getHttpServer())
+      .patch('/api/v1/students/me')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({ fullName: 'Nguyễn Văn B' })
+      .expect(200);
+    expect(updatedAgain.body.data.profileCompletedAt).toBe(completedAt);
+  });
+
   it('upgrades an existing wallet without losing its daily counter', async () => {
+    await db.undoLastMigration(); // TransactionBalanceAudit
     await db.undoLastMigration(); // StudentOnboarding
     await db.undoLastMigration(); // RevealArchivedStudents
     await db.undoLastMigration(); // ArchiveStudentWallets
     await db.undoLastMigration(); // PrepareHardwareIntegration
     await db.query('UPDATE accounts SET "dailySpent" = 1234');
     await db.query(`UPDATE cards SET uid = '00:a1:b2:c3'`);
+    await db.query(
+      `INSERT INTO transactions
+        (amount, type, status, "idempotencyKey", "studentCode", "studentId", "accountId", "merchantId")
+       VALUES ($1, 'debit', 'success', $2, $3, $4, $5, $6)`,
+      [
+        1000,
+        'legacy-audit-transaction',
+        student.studentCode,
+        student.id,
+        account.id,
+        merchant.id,
+      ],
+    );
     await db.runMigrations();
     const wallet = await db
       .getRepository(Account)
@@ -407,6 +583,11 @@ describe('Hardware payments with real PostgreSQL', () => {
     expect(
       (await db.getRepository(Card).findOneByOrFail({ id: card.id })).uid,
     ).toBe('00A1B2C3');
+    expect(
+      await db
+        .getRepository(Transaction)
+        .findOneByOrFail({ idempotencyKey: 'legacy-audit-transaction' }),
+    ).toMatchObject({ balanceBefore: null, balanceAfter: null });
   });
 
   it('replays after a lost response and after card lock without a second debit', async () => {
@@ -517,6 +698,10 @@ describe('Hardware payments with real PostgreSQL', () => {
       });
       expect(await balance()).toBe(100000);
       expect(await db.getRepository(Transaction).count()).toBe(0);
+      expect(
+        (await db.getRepository(Card).findOneByOrFail({ id: card.id }))
+          .lastUsedAt,
+      ).toBeNull();
     } finally {
       await db.query('DROP TRIGGER reject_test_debit ON transactions');
       await db.query('DROP FUNCTION reject_test_debit()');
@@ -566,15 +751,44 @@ describe('Hardware payments with real PostgreSQL', () => {
     expect(await balance()).toBe(100000);
   });
 
-  it('rejects locked cards, inactive students and revoked merchant keys', async () => {
-    await db.getRepository(Card).update(card.id, { status: CardStatus.FROZEN });
-    expect((await pay().expect(400)).body.code).toBe('CARD_INACTIVE');
-    await db.getRepository(Card).update(card.id, { status: CardStatus.ACTIVE });
+  it.each([CardStatus.INACTIVE, CardStatus.LOST, CardStatus.FROZEN])(
+    'rejects a %s card without debiting the wallet',
+    async (status) => {
+      await db.getRepository(Card).update(card.id, { status });
+      expect((await pay().expect(400)).body.code).toBe('CARD_INACTIVE');
+      expect(await balance()).toBe(100000);
+    },
+  );
+
+  it('rejects a nonexistent card without debiting the wallet', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/api/v1/transactions/pay/card')
+      .set('X-API-Key', apiKey)
+      .send({ ...payRequest(), cardUid: 'DEADBEEF' })
+      .expect(404);
+    expect(response.body.code).toBe('CARD_NOT_FOUND');
+    expect(await balance()).toBe(100000);
+  });
+
+  it('rejects inactive students and revoked merchant keys', async () => {
     await db.getRepository(Student).update(student.id, { isActive: false });
     expect((await pay().expect(400)).body.code).toBe('STUDENT_INACTIVE');
     await db.getRepository(Merchant).update(merchant.id, { isActive: false });
     await pay().expect(401);
     expect(await balance()).toBe(100000);
+  });
+
+  it('returns stable wallet decline codes without debiting', async () => {
+    await db.getRepository(Account).update(account.id, { balance: 1000 });
+    expect((await pay().expect(400)).body.code).toBe('INSUFFICIENT_BALANCE');
+
+    await db.getRepository(Account).update(account.id, {
+      balance: 100000,
+      status: AccountStatus.FROZEN,
+    });
+    expect((await pay().expect(400)).body.code).toBe('ACCOUNT_FROZEN');
+    expect(await balance()).toBe(100000);
+    expect(await db.getRepository(Transaction).count()).toBe(0);
   });
 
   it('enforces daily limits for concurrent requests', async () => {
@@ -595,13 +809,36 @@ describe('Hardware payments with real PostgreSQL', () => {
     expect(result.body.data.balance).toBe(100000);
   });
 
-  it('scopes device QR status to the merchant and expires the QR on server', async () => {
+  it('creates fixed-amount dynamic QR for a device and scopes status to its merchant', async () => {
     const created = await request(app.getHttpServer())
       .post('/api/v1/hardware/topup/qr')
       .set('X-API-Key', apiKey)
-      .send({ cardUid: card.uid })
+      .send({ cardUid: card.uid, amount: 50000 })
       .expect(200);
     const ref = created.body.data.referenceCode;
+    expect(created.body.data.amount).toBe(50000);
+    const qrUrl = new URL(created.body.data.qrUrl);
+    expect(qrUrl.searchParams.get('amount')).toBe('50000');
+    expect(qrUrl.searchParams.get('des')).toBe(ref);
+    await expect(
+      db.getRepository(Transaction).findOneByOrFail({ referenceCode: ref }),
+    ).resolves.toMatchObject({
+      amount: 50000,
+      merchantId: merchant.id,
+      status: TransactionStatus.PENDING,
+    });
+
+    const pendingStatus = await request(app.getHttpServer())
+      .get(`/api/v1/hardware/topup/status/${ref}`)
+      .set('X-API-Key', apiKey)
+      .expect(200);
+    expect(pendingStatus.body.data).toMatchObject({
+      status: 'pending',
+      amount: 50000,
+      balance: 100000,
+      studentCode: student.studentCode,
+    });
+
     await db
       .getRepository(Transaction)
       .update({ referenceCode: ref }, { expiresAt: new Date(0) });
@@ -617,6 +854,67 @@ describe('Hardware payments with real PostgreSQL', () => {
       .get(`/api/v1/hardware/topup/status/${ref}`)
       .set('X-API-Key', 'other-key')
       .expect(404);
+  });
+
+  it.each([
+    [{ cardUid: '00A1B2C3' }, 400],
+    [{ cardUid: '00A1B2C3', amount: 999 }, 400],
+    [{ cardUid: '00A1B2C3', amount: 5000001 }, 400],
+    [{ cardUid: '00A1B2C3', amount: 25000.5 }, 400],
+  ])('rejects an invalid device top-up request %#', async (body, status) => {
+    await request(app.getHttpServer())
+      .post('/api/v1/hardware/topup/qr')
+      .set('X-API-Key', apiKey)
+      .send(body)
+      .expect(status);
+    expect(await db.getRepository(Transaction).count()).toBe(0);
+  });
+
+  it('keeps student dynamic QR fixed-amount and static QR amount-free', async () => {
+    const dynamic = await sepay.createPayment(student.studentCode, 75000);
+    const dynamicUrl = new URL(dynamic.qrUrl);
+    expect(dynamic.amount).toBe(75000);
+    expect(dynamicUrl.searchParams.get('amount')).toBe('75000');
+    expect(dynamicUrl.searchParams.get('des')).toBe(dynamic.referenceCode);
+
+    const status = await sepay.checkStatus(dynamic.referenceCode, {
+      id: student.id,
+      role: 'student',
+    });
+    expect(status).toMatchObject({ status: 'pending', amount: 75000 });
+
+    const staticQr = sepay.createStaticQr();
+    const staticUrl = new URL(staticQr.qrUrl);
+    expect(staticUrl.searchParams.has('amount')).toBe(false);
+    expect(staticUrl.searchParams.get('des')).toBe(staticQr.description);
+  });
+
+  it('credits a fixed device QR exactly once and returns the settled balance', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/hardware/topup/qr')
+      .set('X-API-Key', apiKey)
+      .send({ studentCode: student.studentCode, amount: 40000 })
+      .expect(200);
+    const ref = created.body.data.referenceCode;
+
+    await Promise.all([
+      sepay.handleWebhook(webhook(501, ref, 40000)),
+      sepay.handleWebhook(webhook(501, ref, 40000)),
+    ]);
+
+    const status = await request(app.getHttpServer())
+      .get(`/api/v1/hardware/topup/status/${ref}`)
+      .set('X-API-Key', apiKey)
+      .expect(200);
+    expect(status.body.data).toMatchObject({
+      status: 'success',
+      amount: 40000,
+      balance: 140000,
+      studentCode: student.studentCode,
+    });
+    expect(await balance()).toBe(140000);
+    expect(await db.getRepository(Transaction).count()).toBe(1);
+    expect(await db.getRepository(TopupPending).count()).toBe(1);
   });
 
   it('returns only the authenticated student transactions regardless of requested code', async () => {
@@ -659,6 +957,13 @@ describe('Hardware payments with real PostgreSQL', () => {
     expect(await balance()).toBe(150000);
     expect(await db.getRepository(Transaction).count()).toBe(1);
     expect(await db.getRepository(TopupPending).count()).toBe(1);
+    expect(
+      await db.getRepository(Transaction).findOneByOrFail({}),
+    ).toMatchObject({
+      type: TransactionType.CREDIT,
+      balanceBefore: 100000,
+      balanceAfter: 150000,
+    });
   });
 
   it('serializes topup and pay on the same wallet', async () => {
@@ -667,6 +972,25 @@ describe('Hardware payments with real PostgreSQL', () => {
       payments.payByCard(card.uid, merchant.id, 25000, randomUUID()),
     ]);
     expect(await balance()).toBe(125000);
+    const transactions = await db.getRepository(Transaction).find();
+    expect(transactions).toHaveLength(2);
+    for (const tx of transactions) {
+      expect(tx.balanceBefore).not.toBeNull();
+      expect(tx.balanceAfter).toBe(
+        tx.type === TransactionType.CREDIT
+          ? tx.balanceBefore! + tx.amount
+          : tx.balanceBefore! - tx.amount,
+      );
+    }
+    expect(
+      transactions.some((first) =>
+        transactions.some(
+          (second) =>
+            first.id !== second.id &&
+            first.balanceAfter === second.balanceBefore,
+        ),
+      ),
+    ).toBe(true);
   });
 
   it('queues a second transfer into an already used QR', async () => {

@@ -25,6 +25,8 @@ X-API-Key: mcp_xxxxxxxxxxxxxxxx
 
 API key được tạo khi admin tạo merchant (`POST /api/v1/merchants`), lấy trường `data.rawApiKey`. Hiện một merchant có một key; demo cấp một merchant cho một thiết bị. Key chỉ hiển thị khi tạo/rotate, database lưu hash.
 
+Production dùng ESP32/NFC reader gọi backend trực tiếp; raw API key được provision vào NVS. Trang web `/pos` chỉ là test console, bị tắt mặc định khi production build và không được dùng để giữ API key production.
+
 ## 2. Quy tắc idempotency (chống thanh toán trùng)
 
 - Mọi request **thanh toán** phải kèm `idempotencyKey` là **UUID** sinh ngay tại thiết bị, giữ nguyên khi **retry** cùng 1 giao dịch.
@@ -146,14 +148,16 @@ Flow: SV quẹt thẻ trên thiết bị → thiết bị tạo QR riêng (chứ
 **Request** (2 cách, ưu tiên `cardUid`):
 
 ```json
-{ "cardUid": "A1B2C3D4" }
+{ "cardUid": "A1B2C3D4", "amount": 50000 }
 ```
 
 hoặc
 
 ```json
-{ "studentCode": "20210012" }
+{ "studentCode": "20210012", "amount": 50000 }
 ```
+
+`amount` là số nguyên VND bắt buộc, từ **1.000đ đến 5.000.000đ**. Chỉ gửi một trong hai trường định danh `cardUid` hoặc `studentCode`.
 
 **Response:**
 
@@ -162,8 +166,8 @@ hoặc
   "success": true,
   "data": {
     "referenceCode": "SCP20210012AB12CD",
-    "qrUrl": "https://qr.sepay.vn/img?acc=...&bank=970422&des=SCP20210012AB12CD",
-    "amount": 0,
+    "qrUrl": "https://qr.sepay.vn/img?acc=...&bank=970422&des=SCP20210012AB12CD&amount=50000",
+    "amount": 50000,
     "expiresAt": "2026-08-02T10:30:00.000Z"
   },
   "timestamp": "..."
@@ -172,7 +176,7 @@ hoặc
 
 Ghi chú:
 
-- `amount = 0` nghĩa là **QR không gắn số tiền cố định** — SV tự nhập số tiền khi chuyển.
+- QR động luôn gắn đúng `amount`; webhook chuyển sai số tiền sẽ vào hàng đợi đối soát và không tự cộng ví.
 - Hiển thị `qrUrl` lên màn hình (render QR bằng thư viện `qrcodegen`).
 - Sau khi SV chuyển khoản, thiết bị **poll** endpoint 4.5 đến khi `status = success` hoặc hết hạn.
 
@@ -232,23 +236,28 @@ SV quét → **phải ghi mã SV vào nội dung chuyển khoản** → backend 
 ### 5.1. Thanh toán tại merchant
 
 ```
-1. Idle: màn hình hiện QR tĩnh + "Quẹt thẻ thanh toán"
-2. SV quẹt thẻ NFC → đọc UID
-3. GET /hardware/students/by-uid/:uid → hiện tên SV
-4. POST /transactions/pay/card { cardUid, amount, idempotencyKey }
-5. Response success → hiện "Thanh toán thành công" + voice + (tùy chọn) số dư mới
+1. Idle: người bán chọn "Thanh toán"
+2. Chọn số tiền → xác nhận
+3. Thiết bị hiển thị WAITING_FOR_CARD và chỉ lúc này mới nhận NFC
+4. SV chạm thẻ → thiết bị lưu full payload + UUID v4 vào NVS
+5. POST /transactions/pay/card { cardUid, amount, idempotencyKey }
+6. Response success → hiện "Thanh toán thành công" + voice + số dư server
    Response lỗi → hiện + voice lỗi tương ứng
+7. Timeout/429/5xx → khóa giao dịch mới, lookup UUID rồi replay cùng payload/key
+8. Chỉ xóa NVS khi success hoặc business decline chắc chắn
 ```
 
 ### 5.2. Nạp tiền — QR động (đề xuất)
 
 ```
 1. Màn hình: "Nạp tiền — quẹt thẻ"
-2. SV quẹt thẻ → POST /hardware/topup/qr { cardUid }
-3. Hiện QR + "Quét bằng app ngân hàng, nhập số tiền rồi chuyển"
-4. Poll GET /hardware/topup/status/:refCode mỗi 3-5s
-5. status = success → hiện số dư + voice "Nạp tiền thành công"
-6. Hết hạn (30 phút) → quay lại màn hình chờ
+2. SV quẹt thẻ → thiết bị nhận diện sinh viên
+3. SV chọn số tiền nạp trên thiết bị
+4. POST /hardware/topup/qr { cardUid, amount }
+5. Hiện QR đã gắn sẵn số tiền và nội dung SCP reference
+6. Poll GET /hardware/topup/status/:refCode mỗi 3-5s
+7. status = success → hiện số tiền, số dư + voice "Nạp tiền thành công"
+8. Hết hạn (30 phút) → quay lại màn hình chờ
 ```
 
 ### 5.3. Nạp tiền — QR tĩnh (theo yêu cầu hội đồng)

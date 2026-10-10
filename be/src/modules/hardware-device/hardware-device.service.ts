@@ -53,7 +53,7 @@ export class HardwareDeviceService {
     if (!student) throw new NotFoundException('Thẻ chưa liên kết sinh viên');
     if (!student.isActive) throw new BadRequestException('Sinh viên bị khóa');
 
-    const account = student.accounts?.[0];
+    const account = student.account;
     if (!account)
       throw new NotFoundException('Không tìm thấy ví của sinh viên');
 
@@ -74,7 +74,11 @@ export class HardwareDeviceService {
     expiresAt: string;
   }> {
     const studentCode = await this.resolveStudentCode(body);
-    return this.sepayService.createDevicePayment(studentCode, merchantId);
+    return this.sepayService.createDevicePayment(
+      studentCode,
+      merchantId,
+      body.amount,
+    );
   }
 
   async getTopupStatus(

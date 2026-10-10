@@ -15,6 +15,7 @@ import { TransformInterceptor } from '../src/common/interceptors/transform.inter
 import { ArchiveStudentWallets1791043200000 } from '../src/database/migrations/1791043200000-ArchiveStudentWallets';
 import { RevealArchivedStudents1791129600000 } from '../src/database/migrations/1791129600000-RevealArchivedStudents';
 import { StudentOnboarding1791216000000 } from '../src/database/migrations/1791216000000-StudentOnboarding';
+import { TransactionBalanceAudit1791302400000 } from '../src/database/migrations/1791302400000-TransactionBalanceAudit';
 import { Initial1785125994312 } from '../src/database/migrations/1785125994312-Initial';
 import { HardenMoneyPath1790323200000 } from '../src/database/migrations/1790323200000-HardenMoneyPath';
 import { PrepareHardwareIntegration1790899200000 } from '../src/database/migrations/1790899200000-PrepareHardwareIntegration';
@@ -34,6 +35,7 @@ import {
 } from '../src/modules/notifications/sms-sender';
 import { RedisService } from '../src/modules/redis/redis.service';
 import { Student } from '../src/modules/students/student.entity';
+import { StudentsService } from '../src/modules/students/students.service';
 import { Transaction } from '../src/modules/transactions/transaction.entity';
 
 config({ quiet: true });
@@ -58,6 +60,9 @@ describe('Student registration completion with PostgreSQL and Redis', () => {
   let adminClient: Client;
   let redis: RedisService;
   let sender: RecordingSmsSender;
+  let students: StudentsService;
+  let auth: AuthService;
+  let jwt: JwtService;
   let databaseCreated = false;
 
   const database = `scp_registration_${Date.now()}_${process.pid}`;
@@ -96,6 +101,7 @@ describe('Student registration completion with PostgreSQL and Redis', () => {
         ArchiveStudentWallets1791043200000,
         RevealArchivedStudents1791129600000,
         StudentOnboarding1791216000000,
+        TransactionBalanceAudit1791302400000,
       ],
       synchronize: false,
     });
@@ -134,6 +140,7 @@ describe('Student registration completion with PostgreSQL and Redis', () => {
         RegistrationService,
         RegistrationOtpService,
         RegistrationOtpStore,
+        StudentsService,
         JwtService,
         { provide: ConfigService, useValue: appConfig },
         { provide: DataSource, useValue: db },
@@ -152,6 +159,10 @@ describe('Student registration completion with PostgreSQL and Redis', () => {
         },
       ],
     }).compile();
+
+    students = module.get(StudentsService);
+    auth = module.get(AuthService);
+    jwt = module.get(JwtService);
 
     app = module.createNestApplication();
     app.setGlobalPrefix('api/v1');
@@ -254,6 +265,50 @@ describe('Student registration completion with PostgreSQL and Redis', () => {
       .where('student.id = :id', { id })
       .getOneOrFail();
   }
+
+  it('runs the complete Phase 1 flow from physical-card provisioning to student login', async () => {
+    const provisioned = await students.create({
+      studentCode: ' svphase1001 ',
+      cardUid: '04:a1:b2:c3:d4:e5:99',
+    });
+
+    const beforeRegistration = await loadStudentWithPassword(provisioned.id);
+    const physicalCard = await db
+      .getRepository(Card)
+      .findOneByOrFail({ studentId: provisioned.id });
+    expect(beforeRegistration).toMatchObject({
+      studentCode: 'SVPHASE1001',
+      phone: null,
+      passwordHash: null,
+      registeredAt: null,
+    });
+    expect(physicalCard.uid).toBe('04A1B2C3D4E599');
+    expect(physicalCard.uid).not.toMatch(/^MOCK-/);
+    expect(
+      await db.getRepository(Account).countBy({ studentId: provisioned.id }),
+    ).toBe(0);
+
+    const { response: registrationResponse } = await register('SVPHASE1001');
+    expect(registrationResponse.headers['set-cookie']).toBeUndefined();
+    expect(
+      await db.getRepository(Account).countBy({ studentId: provisioned.id }),
+    ).toBe(1);
+
+    const loginResponse = await request(app.getHttpServer())
+      .post('/api/v1/auth/login')
+      .send({ studentCode: 'SVPHASE1001', password: phone })
+      .expect(200);
+    expect(loginResponse.body.data).toMatchObject({
+      mustChangePassword: true,
+      user: { studentCode: 'SVPHASE1001', role: 'student' },
+    });
+    expect(loginResponse.headers['set-cookie']).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('access_token='),
+        expect.stringContaining('refresh_token='),
+      ]),
+    );
+  });
 
   it('completes registration atomically without auto login', async () => {
     const stub = await createStub('SVREG001');
@@ -495,5 +550,89 @@ describe('Student registration completion with PostgreSQL and Redis', () => {
     expect(await db.getRepository(Card).countBy({ studentId: legacy.id })).toBe(
       0,
     );
+  });
+
+  it('requires the current password even during mandatory first-login change', async () => {
+    const stub = await createStub('SVPHASE2001');
+    await register(stub.studentCode);
+
+    await expect(
+      auth.changePassword(
+        stub.id,
+        'student',
+        'wrong-current-password',
+        'NewPassword123!',
+        'first-login-wrong-jti',
+        Math.floor(Date.now() / 1000) + 600,
+      ),
+    ).rejects.toThrow('Mật khẩu hiện tại không đúng');
+
+    const unchanged = await loadStudentWithPassword(stub.id);
+    expect(unchanged.mustChangePassword).toBe(true);
+    await expect(bcrypt.compare(phone, unchanged.passwordHash)).resolves.toBe(
+      true,
+    );
+  });
+
+  it('rejects reusing the current password', async () => {
+    const stub = await createStub('SVPHASE2002');
+    await register(stub.studentCode);
+
+    await expect(
+      auth.changePassword(
+        stub.id,
+        'student',
+        phone,
+        phone,
+        'first-login-reuse-jti',
+        Math.floor(Date.now() / 1000) + 600,
+      ),
+    ).rejects.toMatchObject({
+      response: { code: 'PASSWORD_REUSE_NOT_ALLOWED' },
+    });
+
+    const unchanged = await loadStudentWithPassword(stub.id);
+    expect(unchanged.mustChangePassword).toBe(true);
+  });
+
+  it('changes the password, revokes the current session and requires login again', async () => {
+    const stub = await createStub('SVPHASE2003');
+    await register(stub.studentCode);
+    const initialLogin = await auth.studentLogin(stub.studentCode, phone);
+    const payload = jwt.verify<{
+      jti: string;
+      exp: number;
+    }>(initialLogin.accessToken, {
+      secret: 'registration-access-secret',
+    });
+    const newPassword = 'NewPassword123!';
+
+    await expect(
+      auth.changePassword(
+        stub.id,
+        'student',
+        phone,
+        newPassword,
+        payload.jti,
+        payload.exp,
+      ),
+    ).resolves.toMatchObject({
+      message: expect.stringContaining('đăng nhập lại'),
+    });
+
+    const changed = await loadStudentWithPassword(stub.id);
+    expect(changed.mustChangePassword).toBe(false);
+    await expect(
+      bcrypt.compare(newPassword, changed.passwordHash),
+    ).resolves.toBe(true);
+    expect(await redis.get(`refresh_token:${stub.id}`)).toBeNull();
+    expect(await redis.get(`blacklist:${payload.jti}`)).toBe('1');
+
+    await expect(auth.studentLogin(stub.studentCode, phone)).rejects.toThrow(
+      'Mã sinh viên hoặc mật khẩu không đúng',
+    );
+    await expect(
+      auth.studentLogin(stub.studentCode, newPassword),
+    ).resolves.toMatchObject({ mustChangePassword: false });
   });
 });

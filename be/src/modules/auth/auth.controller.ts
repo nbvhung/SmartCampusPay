@@ -25,6 +25,13 @@ const COOKIE_OPTIONS = {
   path: '/',
 };
 
+interface AuthenticatedUser {
+  id: string;
+  role: 'student' | 'admin' | 'super_admin';
+  jti: string;
+  exp: number;
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(
@@ -111,7 +118,9 @@ export class AuthController {
     const refreshToken = req.cookies?.refresh_token;
     if (!refreshToken) {
       this.clearTokenCookies(res);
-      throw new UnauthorizedException('Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại');
+      throw new UnauthorizedException(
+        'Phiên đăng nhập đã hết hạn, vui lòng đăng nhập lại',
+      );
     }
     let result: Awaited<ReturnType<AuthService['refresh']>>;
     try {
@@ -128,7 +137,10 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  async logout(@CurrentUser() user: any, @Res({ passthrough: true }) res: any) {
+  async logout(
+    @CurrentUser() user: AuthenticatedUser,
+    @Res({ passthrough: true }) res: any,
+  ) {
     await this.service.logout(user.id, user.jti, user.exp);
     this.clearTokenCookies(res);
     return { message: 'Đăng xuất thành công' };
@@ -139,15 +151,17 @@ export class AuthController {
   @Post('change-password')
   @HttpCode(HttpStatus.OK)
   async changePassword(
-    @CurrentUser() user: any,
+    @CurrentUser() user: AuthenticatedUser,
     @Body() dto: ChangePasswordDto,
     @Res({ passthrough: true }) res: any,
   ) {
     const result = await this.service.changePassword(
       user.id,
       user.role,
-      dto.newPassword,
       dto.oldPassword,
+      dto.newPassword,
+      user.jti,
+      user.exp,
     );
     // Xoá cookie vì session bị invalidate sau khi đổi MK
     this.clearTokenCookies(res);
@@ -157,7 +171,7 @@ export class AuthController {
   // ─── GET ME ───────────────────────────────────────────────────────────────────
 
   @Get('me')
-  async me(@CurrentUser() user: any) {
+  async me(@CurrentUser() user: AuthenticatedUser) {
     return this.service.getMe(user.id, user.role);
   }
 

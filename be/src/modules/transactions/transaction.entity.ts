@@ -32,6 +32,12 @@ export class Transaction {
   @Column({ type: 'int' })
   amount: number;
 
+  @Column({ type: 'int', nullable: true })
+  balanceBefore: number | null;
+
+  @Column({ type: 'int', nullable: true })
+  balanceAfter: number | null;
+
   @Column({ type: 'enum', enum: TransactionType })
   type: TransactionType;
 

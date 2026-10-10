@@ -5,7 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   DeleteDateColumn,
-  ManyToOne,
+  OneToOne,
   JoinColumn,
   OneToMany,
   Check,
@@ -49,7 +49,7 @@ export class Account {
   @Column({ unique: true })
   studentId: string;
 
-  @ManyToOne(() => Student, (student) => student.accounts)
+  @OneToOne(() => Student, (student) => student.account)
   @JoinColumn({ name: 'studentId' })
   student: Student;
 

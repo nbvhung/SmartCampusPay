@@ -231,9 +231,15 @@ export class AuthService {
   async changePassword(
     userId: string,
     role: string,
+    oldPassword: string,
     newPassword: string,
-    oldPassword?: string,
+    jti: string,
+    accessTokenExp: number,
   ) {
+    if (!jti || !Number.isFinite(accessTokenExp)) {
+      throw new UnauthorizedException('Phiên đăng nhập không hợp lệ');
+    }
+
     if (role === 'student') {
       const student = await this.studentRepo.findOne({
         where: { id: userId },
@@ -241,14 +247,11 @@ export class AuthService {
       });
       if (!student) throw new UnauthorizedException('Không tìm thấy tài khoản');
 
-      // Nếu không phải lần đổi bắt buộc → cần xác nhận mật khẩu cũ
-      if (!student.mustChangePassword) {
-        if (!oldPassword) {
-          throw new BadRequestException('Vui lòng nhập mật khẩu cũ');
-        }
-        const valid = await bcrypt.compare(oldPassword, student.passwordHash);
-        if (!valid) throw new BadRequestException('Mật khẩu cũ không đúng');
-      }
+      await this.validatePasswordChange(
+        oldPassword,
+        newPassword,
+        student.passwordHash,
+      );
 
       const passwordHash = await bcrypt.hash(newPassword, 10);
       await this.studentRepo.update(userId, {
@@ -256,8 +259,7 @@ export class AuthService {
         mustChangePassword: false,
       });
 
-      // Xoá toàn bộ session cũ (force re-login)
-      await this.redis.del(`refresh_token:${userId}`);
+      await this.logout(userId, jti, accessTokenExp);
       return { message: 'Đổi mật khẩu thành công. Vui lòng đăng nhập lại.' };
     }
 
@@ -265,16 +267,16 @@ export class AuthService {
     const admin = await this.adminsService.findById(userId);
     if (!admin) throw new UnauthorizedException('Không tìm thấy tài khoản');
 
-    if (!oldPassword) {
-      throw new BadRequestException('Vui lòng nhập mật khẩu cũ');
-    }
-    const validAdmin = await bcrypt.compare(oldPassword, admin.passwordHash);
-    if (!validAdmin) throw new BadRequestException('Mật khẩu cũ không đúng');
+    await this.validatePasswordChange(
+      oldPassword,
+      newPassword,
+      admin.passwordHash,
+    );
 
     const adminPasswordHash = await bcrypt.hash(newPassword, 10);
     await this.adminsService.updatePassword(userId, adminPasswordHash);
 
-    await this.redis.del(`refresh_token:${userId}`);
+    await this.logout(userId, jti, accessTokenExp);
     return { message: 'Đổi mật khẩu thành công. Vui lòng đăng nhập lại.' };
   }
 
@@ -284,7 +286,7 @@ export class AuthService {
     if (role === 'student') {
       const student = await this.studentRepo.findOne({
         where: { id: userId },
-        relations: { accounts: true, cards: true },
+        relations: { account: true, cards: true },
       });
       if (!student) throw new UnauthorizedException();
       return { ...student, role: 'student' };
@@ -325,5 +327,28 @@ export class AuthService {
     await this.redis.set(`refresh_token:${userId}`, hash, REFRESH_TTL_SEC);
 
     return { accessToken, refreshToken };
+  }
+
+  private async validatePasswordChange(
+    oldPassword: string,
+    newPassword: string,
+    passwordHash: string,
+  ): Promise<void> {
+    if (!oldPassword) {
+      throw new BadRequestException('Vui lòng nhập mật khẩu hiện tại');
+    }
+    const currentPasswordValid = await bcrypt.compare(
+      oldPassword,
+      passwordHash,
+    );
+    if (!currentPasswordValid) {
+      throw new BadRequestException('Mật khẩu hiện tại không đúng');
+    }
+    if (await bcrypt.compare(newPassword, passwordHash)) {
+      throw new BadRequestException({
+        code: 'PASSWORD_REUSE_NOT_ALLOWED',
+        message: 'Mật khẩu mới phải khác mật khẩu hiện tại',
+      });
+    }
   }
 }
