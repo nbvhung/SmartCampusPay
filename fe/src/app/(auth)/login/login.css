@@ -83,6 +83,9 @@ html[data-theme="dark"] .login-page {
 .login-submit:hover:not(:disabled) > svg { transform: translateX(3px); }
 .login-submit:disabled { opacity: .8; }
 .login-spinner { animation: login-spin 1s linear infinite; }
+.login-register-link { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 20px; color: var(--login-muted); font-size: 12px; }
+.login-register-link a { color: var(--login-accent); font-weight: 650; text-decoration: none; }
+.login-register-link a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .login-divider { display: flex; align-items: center; gap: 12px; color: var(--login-muted); font-size: 8px; letter-spacing: 1.4px; margin: 28px 0 22px; white-space: nowrap; }
 .login-divider > span { height: 1px; background: var(--login-border); flex: 1; }
 .login-account-note { display: flex; align-items: center; gap: 12px; }

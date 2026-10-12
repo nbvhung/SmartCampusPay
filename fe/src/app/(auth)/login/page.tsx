@@ -114,7 +114,7 @@ export default function LoginPage() {
               {isLoading ? <Loader2 size={20} className="login-spinner" /> : <ArrowRight size={20} />}
             </button>
           </form>
-          {portal === 'student' && <div className="register-login-link"><span>Chưa có tài khoản?</span><Link href="/register">Đăng ký</Link></div>}
+          {portal === 'student' && <div className="login-register-link"><span>Chưa có tài khoản?</span><Link href="/register">Đăng ký</Link></div>}
           </>}
 
           <div className="login-divider"><span /> MỘT TÀI KHOẢN, MỌI TIỆN ÍCH <span /></div>
