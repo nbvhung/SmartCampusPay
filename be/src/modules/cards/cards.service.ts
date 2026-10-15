@@ -67,6 +67,24 @@ export class CardsService {
     return this.repo.save(card);
   }
 
+  async updateUid(id: string, uid: string): Promise<Card> {
+    const normalized = normalizeUid(uid);
+    if (normalized.startsWith('MOCK-')) {
+      throw new ConflictException('Chỉ chấp nhận UID đọc từ thẻ vật lý');
+    }
+    const card = await this.repo.findOne({ where: { id } });
+    if (!card) throw new NotFoundException('Card not found');
+    card.uid = normalized;
+    try {
+      return await this.repo.save(card);
+    } catch (error) {
+      if ((error as { driverError?: { code?: string } }).driverError?.code === '23505') {
+        throw new ConflictException('UID thẻ đã tồn tại, kể cả thẻ đã lưu trữ');
+      }
+      throw error;
+    }
+  }
+
   async updateLastUsed(uid: string): Promise<void> {
     await this.repo.update({ uid }, { lastUsedAt: new Date() });
   }

@@ -8,6 +8,7 @@ import { StatCard } from '@/components/ui/stat-card';
 import { DataTable, type Column } from '@/components/ui/data-table';
 import { PageLoading } from '@/components/ui/loading-spinner';
 import { transactionApi } from '@/lib/transaction-api';
+import { studentApi } from '@/lib/student-api';
 import { useAuth } from '@/contexts/auth-context';
 import type { Transaction, Student } from '@/types';
 
@@ -15,14 +16,38 @@ export default function StudentDashboardPage() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [recentTxs, setRecentTxs] = useState<Transaction[]>([]);
+  const [profile, setProfile] = useState<Student | null>(null);
+  const [loadError, setLoadError] = useState('');
 
-  const student = user as Student | null;
-  const balance = student?.account?.balance ?? 0;
+  const student = profile;
+  const balance = student?.account?.balance;
 
   useEffect(() => {
     if (!user || !('studentCode' in user)) return;
-    transactionApi.listByStudent(user.studentCode, { limit: 10 }).then((r) => setRecentTxs(r.data.data)).catch(() => {})
-      .finally(() => setLoading(false));
+    let active = true;
+    const load = async () => {
+      try {
+        const [profileResult, transactionsResult] = await Promise.allSettled([
+          studentApi.getMe(),
+          transactionApi.listByStudent(user.studentCode, { limit: 10 }),
+        ]);
+        if (active) {
+          if (profileResult.status === 'fulfilled') {
+            setProfile(profileResult.value.data.data);
+            setLoadError('');
+          } else setLoadError('Không thể tải số dư hiện tại. Vui lòng thử lại.');
+          if (transactionsResult.status === 'fulfilled') setRecentTxs(transactionsResult.value.data.data);
+        }
+      } catch {
+        if (active) setLoadError('Không thể tải số dư hiện tại. Vui lòng thử lại.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    void load();
+    const onFocus = () => { void load(); };
+    window.addEventListener('focus', onFocus);
+    return () => { active = false; window.removeEventListener('focus', onFocus); };
   }, [user]);
 
   if (loading || !user) return <StudentLayout><PageLoading /></StudentLayout>;
@@ -47,8 +72,9 @@ export default function StudentDashboardPage() {
   return (
     <StudentLayout>
       <div className="dashboard-welcome"><div><span className="header-eyebrow">VÍ SINH VIÊN · PTIT</span><h1>Xin chào, {student?.fullName || student?.studentCode}.</h1><p>Quản lý ví và theo dõi thanh toán trong khuôn viên.</p></div><Link href="/student/topup" className="quick-action"><Plus size={17} />Nạp tiền vào ví<ArrowUpRight size={16} /></Link></div>
+      {loadError && <p role="alert" className="mb-4 text-sm text-red-700">{loadError}</p>}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        <StatCard title="Số dư ví" value={`${balance.toLocaleString()}đ`} icon={<Wallet className="w-6 h-6" />} />
+        <StatCard title="Số dư ví" value={balance === undefined ? 'Chưa tải được' : `${balance.toLocaleString()}đ`} icon={<Wallet className="w-6 h-6" />} />
         <StatCard title="Giao dịch hôm nay" value={todayTxs.length.toString()} icon={<TrendingUp className="w-6 h-6" />} />
         <StatCard title="Chi tiêu hôm nay" value={`${todayTxs.filter(t => t.type === 'debit' && t.status === 'success').reduce((s, t) => s + t.amount, 0).toLocaleString()}đ`} icon={<Receipt className="w-6 h-6" />} />
       </div>

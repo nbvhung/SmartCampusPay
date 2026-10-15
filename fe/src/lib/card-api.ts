@@ -16,5 +16,8 @@ export const cardApi = {
   updateStatus: (id: string, status: CardStatus) =>
     api.patch<ApiResponse<Card>>(`/cards/${id}/status`, { status }),
 
+  updateUid: (id: string, uid: string) =>
+    api.patch<ApiResponse<Card>>(`/cards/${id}/uid`, { uid }),
+
   remove: (id: string) => api.delete<ApiResponse<{ message: string }>>(`/cards/${id}`),
 };

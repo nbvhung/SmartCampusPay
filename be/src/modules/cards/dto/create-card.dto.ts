@@ -16,3 +16,7 @@ export class CreateCardDto {
 export class UpdateCardStatusDto {
   @IsEnum(CardStatus) status: CardStatus;
 }
+
+export class UpdateCardUidDto {
+  @IsString() @MaxLength(50) uid: string;
+}

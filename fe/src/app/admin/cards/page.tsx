@@ -19,6 +19,7 @@ export default function AdminCardsPage() {
   const [form, setForm] = useState({ uid: '', studentCode: '', chipType: 'MIFARE' });
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [editingCard, setEditingCard] = useState<Card | null>(null);
 
   const fetchCards = useCallback(async () => {
     try {
@@ -52,6 +53,21 @@ export default function AdminCardsPage() {
     try { await cardApi.updateStatus(card.id, status); fetchCards(); } catch {}
   }
 
+  async function handleSaveUid() {
+    if (!editingCard) return;
+    setError('');
+    setSubmitting(true);
+    try {
+      await cardApi.updateUid(editingCard.id, form.uid);
+      setEditingCard(null);
+      setForm({ uid: '', studentCode: '', chipType: 'MIFARE' });
+      await fetchCards();
+    } catch (err: unknown) {
+      const response = err as { response?: { data?: { message?: string } } };
+      setError(response.response?.data?.message || 'Không thể cập nhật UID thẻ');
+    } finally { setSubmitting(false); }
+  }
+
   async function handleDelete(card: Card) {
     if (!confirm(`Xoá thẻ ${card.uid}?`)) return;
     try { await cardApi.remove(card.id); fetchCards(); } catch {}
@@ -79,9 +95,11 @@ export default function AdminCardsPage() {
     {
       key: 'actions', header: '',
       render: (c) => (
-        <button onClick={() => handleDelete(c)} className="p-1 text-red-400 hover:text-red-600 transition-colors">
+        <div className="flex gap-2"><button onClick={() => { setEditingCard(c); setForm({ uid: c.uid, studentCode: c.student?.studentCode || '', chipType: c.chipType }); setError(''); }} className="p-1 text-blue-600" aria-label={`Cập nhật UID thẻ ${c.uid}`}>
+          Sửa UID
+        </button><button onClick={() => handleDelete(c)} className="p-1 text-red-400 hover:text-red-600 transition-colors">
           <Trash2 className="w-4 h-4" />
-        </button>
+        </button></div>
       ),
     },
   ];
@@ -97,6 +115,14 @@ export default function AdminCardsPage() {
       </div>
 
       <DataTable columns={columns} data={cards} emptyMessage="Chưa có thẻ nào" />
+
+      {editingCard && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setEditingCard(null)}><form className="bg-white rounded-xl p-6 w-full max-w-md shadow-xl space-y-4" onClick={e => e.stopPropagation()} onSubmit={e => { e.preventDefault(); void handleSaveUid(); }}>
+        <h2 className="text-lg font-semibold">Gán UID thẻ vật lý</h2>
+        <p className="text-sm text-gray-600">Sinh viên: {editingCard.student?.studentCode}. Quẹt thẻ trên đầu đọc, lấy UID từ log thiết bị rồi nhập vào đây. UID cũ sẽ không dùng được nữa.</p>
+        <label className="block text-sm font-medium">UID đọc từ thẻ<input required value={form.uid} onChange={e => setForm(p => ({ ...p, uid: e.target.value }))} className="mt-1 w-full px-3 py-2 border rounded-lg" placeholder="Ví dụ: A1B2C3D4" /></label>
+        {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
+        <div className="flex justify-end gap-3"><button type="button" onClick={() => setEditingCard(null)}>Hủy</button><button type="submit" disabled={submitting} className="px-4 py-2 bg-red-600 text-white rounded-lg disabled:opacity-50">{submitting ? 'Đang lưu...' : 'Lưu UID'}</button></div>
+      </form></div>}
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowModal(false)}>

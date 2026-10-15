@@ -21,7 +21,7 @@ export default function LoginPage() {
   const helpRef = useRef<HTMLDetailsElement>(null);
   const router = useRouter();
   const pathname = usePathname();
-  const portal = pathname === '/login/student' ? 'student' : pathname === '/login/admin' ? 'admin' : null;
+  const portal = pathname === '/login/admin' ? 'admin' : 'student';
   const { setUser, setMustChangePassword } = useAuth();
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -77,8 +77,7 @@ export default function LoginPage() {
 
           {!portal ? <div className="login-portal-options">
             <Link href="/login/student" className="login-portal-option"><UserRound size={23} /><div><strong>Sinh viên</strong><small>Xem ví, nạp tiền và giao dịch của bạn.</small></div><ArrowRight size={20} /></Link>
-            <Link href="/login/admin" className="login-portal-option"><ShieldCheck size={23} /><div><strong>Quản trị viên</strong><small>Quản lý sinh viên, thẻ, ví và điểm thanh toán.</small></div><ArrowRight size={20} /></Link>
-          </div> : <><div className="login-portal-heading"><strong>{portal === 'student' ? 'Cổng sinh viên' : 'Cổng quản trị'}</strong><Link href="/login">Đổi cổng đăng nhập</Link></div>
+          </div> : <><div className="login-portal-heading"><strong>{portal === 'student' ? 'Cổng sinh viên' : 'Cổng quản trị'}</strong></div>
           <form key={portal} onSubmit={handleSubmit} className="login-form" aria-busy={isLoading}>
             <div className="login-field">
               <label htmlFor="identifier">{portal === 'student' ? 'Mã sinh viên' : 'Tên đăng nhập quản trị'}</label>
