@@ -3,8 +3,6 @@ export type {
   StudentUser,
   AdminUser,
   LoginResponse,
-  RegistrationOtpResponse,
-  RegistrationResult,
   AuthState,
   UserRole,
 } from "./auth";

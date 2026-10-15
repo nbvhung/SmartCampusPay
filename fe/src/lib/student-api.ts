@@ -20,7 +20,7 @@ export const studentApi = {
 
   get: (id: string) => api.get<ApiResponse<Student>>(`/students/${id}`),
 
-  create: (data: { studentCode: string; cardUid: string }) =>
+  create: (data: { studentCode: string; cardUid: string; fullName?: string; email?: string; faculty?: string; phone?: string }) =>
     api.post<ApiResponse<Student>>("/students", data),
 
   update: (

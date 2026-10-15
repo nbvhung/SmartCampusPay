@@ -1,0 +1,85 @@
+name: Deployment checks
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            be/package-lock.json
+            fe/package-lock.json
+      - run: npm ci
+        working-directory: be
+      - run: npm test -- --runInBand
+        working-directory: be
+      - run: npm run test:e2e -- --runInBand
+        working-directory: be
+        env:
+          NODE_ENV: test
+          TEST_DB_HOST: 127.0.0.1
+          TEST_DB_PORT: 5432
+          TEST_DB_USER: postgres
+          TEST_DB_PASS: postgres
+          TEST_REDIS_HOST: 127.0.0.1
+          TEST_REDIS_PORT: 6379
+      - run: npm ci && npm test
+        working-directory: fe
+  containers:
+    needs: tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 deploy/init-env.py --domain pilot.example.org --email ci@example.org --tag "${GITHUB_SHA}"
+      - run: docker compose --env-file .env.production -f compose.production.yaml config --quiet
+      - run: docker compose --env-file .env.production -f compose.production.yaml build
+      - run: docker compose --env-file .env.production -f compose.production.yaml run --rm migrate
+      - run: docker compose --env-file .env.production -f compose.production.yaml up -d --wait backend frontend
+      - name: Production readiness and retired registration routes
+        run: |
+          docker compose --env-file .env.production -f compose.production.yaml exec -T backend node -e '
+            (async () => {
+              const root = "http://localhost:4000/api/v1";
+              if (!(await fetch(root + "/health/ready")).ok) throw Error("not ready");
+              for (const [path, body] of [
+                ["request-otp", {studentCode:"B23DCCN001"}],
+                ["verify", {registrationId:"a".repeat(43),otp:"123456"}]
+              ]) {
+                const r = await fetch(root + "/auth/register/" + path, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+                if (r.status !== 401 && r.status !== 404) throw Error("retired registration route is reachable");
+              }
+            })().catch(e => { console.error(e.message); process.exit(1); });'
+      - name: Validate HTTPS proxy configuration
+        run: docker compose --env-file .env.production -f compose.production.yaml run --rm --no-deps proxy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      - name: Save tested images
+        run: |
+          docker save "smartcampuspay/backend:${GITHUB_SHA}" "smartcampuspay/frontend:${GITHUB_SHA}" | gzip > images.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: images-${{ github.sha }}
+          path: images.tar.gz
+          retention-days: 7
+      - name: Cleanup isolated CI stack
+        if: always()
+        run: docker compose --env-file .env.production -f compose.production.yaml down -v

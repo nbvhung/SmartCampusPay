@@ -1,0 +1,125 @@
+name: smartcampuspay
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-backend: &backend
+  image: ${IMAGE_PREFIX:-smartcampuspay}/backend:${RELEASE_TAG:?Set RELEASE_TAG to the Git SHA}
+  build: ./be
+  env_file: .env.production
+  environment:
+    NODE_ENV: production
+    PORT: "4000"
+    DB_HOST: db
+    DB_PORT: "5432"
+    DB_USER: postgres
+    DB_NAME: smartcampuspay
+    DB_PASS: ${DB_PASS:?Set DB_PASS}
+    DB_SYNCHRONIZE: "false"
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    FRONTEND_URL: https://${DOMAIN:?Set DOMAIN}
+    TRUST_PROXY_HOPS: "1"
+  networks: [app, data]
+  logging: *logging
+  init: true
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  db:
+    image: postgres:17-bookworm
+    environment:
+      POSTGRES_DB: smartcampuspay
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASS:?Set DB_PASS}
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    networks: [data]
+    restart: unless-stopped
+    logging: *logging
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U postgres -d smartcampuspay"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, "yes", --maxmemory, 256mb, --maxmemory-policy, noeviction]
+    volumes: ["redis_data:/data"]
+    networks: [data]
+    restart: unless-stopped
+    logging: *logging
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    <<: *backend
+    profiles: [tools]
+    command: [node, node_modules/typeorm/cli.js, migration:run, -d, dist/database/data-source.js]
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"
+
+  backend:
+    <<: *backend
+    restart: unless-stopped
+    stop_grace_period: 30s
+    depends_on:
+      db: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:4000/api/v1/health/ready',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 40s
+      retries: 5
+
+  frontend:
+    image: ${IMAGE_PREFIX:-smartcampuspay}/frontend:${RELEASE_TAG:?Set RELEASE_TAG}
+    build:
+      context: ./fe
+    networks: [app]
+    restart: unless-stopped
+    init: true
+    security_opt: ["no-new-privileges:true"]
+    logging: *logging
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/login/student',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
+
+  proxy:
+    image: caddy:2-alpine
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Set ACME_EMAIL}
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks: [app]
+    depends_on:
+      backend: { condition: service_healthy }
+      frontend: { condition: service_healthy }
+    restart: unless-stopped
+    logging: *logging
+
+networks:
+  app:
+  data:
+    internal: true
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:

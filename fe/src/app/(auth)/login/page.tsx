@@ -114,7 +114,7 @@ export default function LoginPage() {
               {isLoading ? <Loader2 size={20} className="login-spinner" /> : <ArrowRight size={20} />}
             </button>
           </form>
-          {portal === 'student' && <div className="login-register-link"><span>Chưa có tài khoản?</span><Link href="/register">Đăng ký</Link></div>}
+          {portal === 'student' && <p className="register-note">Lần đầu: tài khoản và mật khẩu đều là MSSV viết hoa. Sau khi đăng nhập bạn phải đổi mật khẩu.</p>}
           </>}
 
           <div className="login-divider"><span /> MỘT TÀI KHOẢN, MỌI TIỆN ÍCH <span /></div>
@@ -122,7 +122,7 @@ export default function LoginPage() {
 
           <details className="login-help" ref={helpRef} open={helpOpen} onToggle={event => setHelpOpen(event.currentTarget.open)}>
             <summary><span><Info size={16} /> Lần đầu đăng nhập hoặc cần hỗ trợ?</span><ChevronDown size={16} /></summary>
-            <div>{portal === 'student' ? <><p>Sinh viên mới chọn <strong>Đăng ký</strong>, nhập mã sinh viên và số điện thoại để nhận OTP. MSSV và thẻ vật lý cần được nhà trường cấp phát trước.</p><p>Sau khi đăng ký thành công, đăng nhập bằng <strong>mã sinh viên</strong> và dùng <strong>số điện thoại đã xác minh</strong> làm mật khẩu ban đầu. Hệ thống sẽ yêu cầu đổi mật khẩu ở lần đăng nhập đầu tiên.</p></> : <p>Quản trị viên đăng nhập bằng tài khoản được cấp. Nếu quên mật khẩu hoặc không thể truy cập, hãy liên hệ quản trị viên cấp cao để được hỗ trợ.</p>}</div>
+            <div>{portal === 'student' ? <><p>Hồ sơ sinh viên được nhà trường cấp sẵn. Tài khoản và mật khẩu lần đầu đều là <strong>MSSV viết hoa</strong>, ví dụ B23DCCN358.</p><p>Đổi mật khẩu ngay sau lần đăng nhập đầu: ít nhất 8 ký tự, có chữ hoa, chữ thường, số và ký tự đặc biệt. Nếu đã đổi, hãy sử dụng mật khẩu hiện tại. Liên hệ quản trị viên nếu chưa có hồ sơ hoặc quên mật khẩu.</p></> : <p>Quản trị viên đăng nhập bằng tài khoản được cấp. Nếu quên mật khẩu hoặc không thể truy cập, hãy liên hệ quản trị viên cấp cao để được hỗ trợ.</p>}</div>
           </details>
         </div>
 

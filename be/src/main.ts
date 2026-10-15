@@ -11,6 +11,11 @@ import { AdminsService } from './modules/admins/admins.service';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.enableShutdownHooks();
+  // Compose publishes only Caddy. It overwrites X-Forwarded-For before forwarding.
+  if (process.env.TRUST_PROXY_HOPS === '1') {
+    app.getHttpAdapter().getInstance().set('trust proxy', 1);
+  }
 
   app.setGlobalPrefix('api/v1');
 
@@ -50,8 +55,10 @@ async function bootstrap() {
       'X-API-Key',
     )
     .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document);
+  if (process.env.NODE_ENV !== 'production') {
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document);
+  }
 
   const port = process.env.PORT || 4000;
   await app.listen(port);

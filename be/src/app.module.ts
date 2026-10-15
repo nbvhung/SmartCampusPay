@@ -4,6 +4,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_GUARD } from '@nestjs/core';
 import databaseConfig from './config/database.config';
+import { validateEnvironment } from './config/production.config';
+import { HealthController } from './health.controller';
 import { AuthModule } from './modules/auth/auth.module';
 import { StudentsModule } from './modules/students/students.module';
 import { AdminsModule } from './modules/admins/admins.module';
@@ -20,7 +22,7 @@ import { TopupClaimsModule } from './modules/topup-claims/topup-claims.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true, load: [databaseConfig] }),
+    ConfigModule.forRoot({ isGlobal: true, load: [databaseConfig], validate: validateEnvironment }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -41,6 +43,7 @@ import { TopupClaimsModule } from './modules/topup-claims/topup-claims.module';
     TopupPendingModule,
     TopupClaimsModule,
   ],
+  controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

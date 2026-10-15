@@ -1,6 +1,10 @@
 export interface ImportStudentRow {
   studentCode: string;
   cardUid: string;
+  fullName?: string;
+  email?: string;
+  faculty?: string;
+  phone?: string;
   rowNumber: number;
 }
 

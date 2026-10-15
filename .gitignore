@@ -12,3 +12,5 @@ Thumbs.db
 .vscode/
 .backups/
 .preview/
+.env.production
+deploy/backups/

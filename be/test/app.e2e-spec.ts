@@ -330,7 +330,7 @@ describe('Hardware payments with real PostgreSQL', () => {
     ).toBeInstanceOf(Date);
   });
 
-  it('provisions a Student stub and physical Card without Account or password', async () => {
+  it('provisions a Student with initial MSSV password, wallet and physical Card', async () => {
     const provisioned = await students.create({
       studentCode: ' b25dccn001 ',
       cardUid: '04:a1:b2:c3:d4:e5:80',
@@ -352,8 +352,11 @@ describe('Hardware payments with real PostgreSQL', () => {
       faculty: null,
       registeredAt: null,
       profileCompletedAt: null,
-      passwordHash: null,
+      mustChangePassword: true,
     });
+    expect(await bcrypt.compare('B25DCCN001', persisted.passwordHash)).toBe(
+      true,
+    );
     expect(provisionedCard).toMatchObject({
       uid: '04A1B2C3D4E580',
       status: CardStatus.ACTIVE,
@@ -361,7 +364,7 @@ describe('Hardware payments with real PostgreSQL', () => {
     });
     expect(
       await db.getRepository(Account).countBy({ studentId: provisioned.id }),
-    ).toBe(0);
+    ).toBe(1);
   });
 
   it('rejects MOCK Card provisioning before creating a Student', async () => {
@@ -388,8 +391,15 @@ describe('Hardware payments with real PostgreSQL', () => {
   it('imports MSSV and physical UID rows through the provisioning path', async () => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Provisioning');
-    sheet.addRow(['MSSV', 'UID thẻ vật lý']);
-    sheet.addRow(['B25DCCN004', '04 11 22 33 44 55 66']);
+    sheet.addRow(['MSSV', 'UID thẻ vật lý', 'Họ tên', 'Email', 'Khoa', 'SĐT']);
+    sheet.addRow([
+      'B25DCCN004',
+      '04 11 22 33 44 55 66',
+      'Import Student',
+      'import@school.test',
+      'CNTT',
+      '0912345678',
+    ]);
 
     const result = await students.bulkImport(
       Buffer.from(await workbook.xlsx.writeBuffer()),
@@ -400,16 +410,16 @@ describe('Hardware payments with real PostgreSQL', () => {
 
     expect(result).toEqual({ created: 1, skipped: 0, errors: [] });
     expect(imported).toMatchObject({
-      fullName: null,
-      email: null,
-      faculty: null,
+      fullName: 'Import Student',
+      email: 'import@school.test',
+      faculty: 'CNTT',
     });
     expect(
       await db.getRepository(Card).findOneByOrFail({ studentId: imported.id }),
     ).toMatchObject({ uid: '04112233445566', status: CardStatus.ACTIVE });
     expect(
       await db.getRepository(Account).countBy({ studentId: imported.id }),
-    ).toBe(0);
+    ).toBe(1);
   });
 
   it('keeps legacy Student profile data and onboarding timestamps unset', async () => {
@@ -558,6 +568,7 @@ describe('Hardware payments with real PostgreSQL', () => {
     await db.undoLastMigration(); // StudentOnboarding
     await db.undoLastMigration(); // RevealArchivedStudents
     await db.undoLastMigration(); // ArchiveStudentWallets
+    await db.undoLastMigration(); // AddTopupClaims
     await db.undoLastMigration(); // PrepareHardwareIntegration
     await db.query('UPDATE accounts SET "dailySpent" = 1234');
     await db.query(`UPDATE cards SET uid = '00:a1:b2:c3'`);

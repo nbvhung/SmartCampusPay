@@ -12,6 +12,8 @@ import { v4 as uuidv4 } from 'uuid';
 import { Student } from '../students/student.entity';
 import { AdminsService } from '../admins/admins.service';
 import { RedisService } from '../redis/redis.service';
+import { Account } from '../accounts/account.entity';
+import { assertStrongPassword } from './password-policy';
 
 const ACCESS_TTL_SEC = 15 * 60; // 15 phút
 const REFRESH_TTL_SEC = 7 * 24 * 3600; // 7 ngày
@@ -30,6 +32,7 @@ export class AuthService {
   // ─── STUDENT LOGIN ──────────────────────────────────────────────────────────
 
   async studentLogin(studentCode: string, password: string) {
+    studentCode = studentCode.trim().toUpperCase();
     const student = await this.studentRepo.findOne({
       where: { studentCode },
       select: {
@@ -46,11 +49,59 @@ export class AuthService {
       throw new UnauthorizedException('Mã sinh viên hoặc mật khẩu không đúng');
     }
 
+    if (student.mustChangePassword && password !== studentCode) {
+      throw new UnauthorizedException('Mã sinh viên hoặc mật khẩu không đúng');
+    }
+
+    // Accounts provisioned under older rules may have an initial DOB/phone hash.
+    // Only accounts still flagged for their first password change accept MSSV.
+    if (
+      student.mustChangePassword &&
+      password === studentCode &&
+      (!student.passwordHash ||
+        !(await bcrypt.compare(password, student.passwordHash)))
+    ) {
+      await this.studentRepo.manager.transaction(async (manager) => {
+        const locked = await manager
+          .createQueryBuilder(Student, 'student')
+          .addSelect('student.passwordHash')
+          .where('student.id = :id', { id: student.id })
+          .setLock('pessimistic_write')
+          .getOne();
+        if (!locked || !locked.isActive || !locked.mustChangePassword)
+          throw new UnauthorizedException('Vui lòng đăng nhập lại');
+        locked.passwordHash = await bcrypt.hash(studentCode, 10);
+        await manager.save(locked);
+        student.passwordHash = locked.passwordHash;
+      });
+    }
     const valid =
       student.passwordHash &&
       (await bcrypt.compare(password, student.passwordHash));
     if (!valid)
       throw new UnauthorizedException('Mã sinh viên hoặc mật khẩu không đúng');
+
+    await this.studentRepo.manager.transaction(async (manager) => {
+      const locked = await manager.findOne(Student, {
+        where: { id: student.id, isActive: true },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!locked) throw new UnauthorizedException();
+      const existing = await manager.findOne(Account, {
+        where: { studentId: student.id },
+        withDeleted: true,
+      });
+      if (!existing)
+        await manager.save(
+          Account,
+          manager.create(Account, {
+            studentId: student.id,
+            balance: 0,
+            dailyLimit: 500000,
+            dailySpent: 0,
+          }),
+        );
+    });
 
     const { accessToken, refreshToken } = await this.issueTokenPair(
       student.id,
@@ -105,9 +156,10 @@ export class AuthService {
   // ─── UNIFIED LOGIN ─────────────────────────────────────────────────────────
 
   async unifiedLogin(identifier: string, password: string) {
+    identifier = identifier.trim();
     // Thử student trước
     const student = await this.studentRepo.findOne({
-      where: { studentCode: identifier },
+      where: { studentCode: identifier.toUpperCase() },
       select: {
         id: true,
         studentCode: true,
@@ -118,29 +170,8 @@ export class AuthService {
       },
     });
 
-    if (student && student.isActive) {
-      const valid =
-        student.passwordHash &&
-        (await bcrypt.compare(password, student.passwordHash));
-      if (valid) {
-        const { accessToken, refreshToken } = await this.issueTokenPair(
-          student.id,
-          'student',
-          student.mustChangePassword,
-        );
-        return {
-          accessToken,
-          refreshToken,
-          mustChangePassword: student.mustChangePassword,
-          user: {
-            id: student.id,
-            studentCode: student.studentCode,
-            fullName: student.fullName,
-            role: 'student' as const,
-          },
-        };
-      }
-    }
+    if (student && student.isActive)
+      return this.studentLogin(identifier, password);
 
     // Thử admin
     const admin = await this.adminsService.findByUsername(identifier);
@@ -236,6 +267,7 @@ export class AuthService {
     jti: string,
     accessTokenExp: number,
   ) {
+    assertStrongPassword(newPassword);
     if (!jti || !Number.isFinite(accessTokenExp)) {
       throw new UnauthorizedException('Phiên đăng nhập không hợp lệ');
     }
@@ -243,7 +275,7 @@ export class AuthService {
     if (role === 'student') {
       const student = await this.studentRepo.findOne({
         where: { id: userId },
-        select: { id: true, passwordHash: true, mustChangePassword: true },
+        select: { id: true, passwordHash: true, mustChangePassword: true, registeredAt: true },
       });
       if (!student) throw new UnauthorizedException('Không tìm thấy tài khoản');
 
@@ -257,6 +289,7 @@ export class AuthService {
       await this.studentRepo.update(userId, {
         passwordHash,
         mustChangePassword: false,
+        ...(!student.registeredAt ? { registeredAt: new Date() } : {}),
       });
 
       await this.logout(userId, jti, accessTokenExp);

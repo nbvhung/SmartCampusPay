@@ -23,18 +23,6 @@ export interface LoginResponse {
   user: AuthUser;
 }
 
-export interface RegistrationOtpResponse {
-  registrationId: string;
-  expiresInSeconds: number;
-  resendAfterSeconds: number;
-}
-
-export interface RegistrationResult {
-  studentCode: string;
-  registeredAt: string;
-  mustChangePassword: true;
-}
-
 export interface AuthState {
   user: AuthUser | null;
   mustChangePassword: boolean;

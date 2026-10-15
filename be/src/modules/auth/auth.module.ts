@@ -9,10 +9,6 @@ import { JwtStrategy } from './jwt.strategy';
 import { Student } from '../students/student.entity';
 import { AdminsModule } from '../admins/admins.module';
 import { RedisModule } from '../redis/redis.module';
-import { NotificationsModule } from '../notifications/notifications.module';
-import { RegistrationOtpService } from './registration-otp.service';
-import { RegistrationOtpStore } from './registration-otp.store';
-import { RegistrationService } from './registration.service';
 
 @Module({
   imports: [
@@ -20,7 +16,6 @@ import { RegistrationService } from './registration.service';
     PassportModule,
     AdminsModule,
     RedisModule,
-    NotificationsModule,
     // JwtModule dùng cho access token (sign/verify trong service dùng config trực tiếp)
     JwtModule.registerAsync({
       imports: [ConfigModule],
@@ -31,14 +26,8 @@ import { RegistrationService } from './registration.service';
       }),
     }),
   ],
+  exports: [AuthService],
   controllers: [AuthController],
-  providers: [
-    AuthService,
-    JwtStrategy,
-    RegistrationOtpStore,
-    RegistrationOtpService,
-    RegistrationService,
-  ],
-  exports: [AuthService, RegistrationOtpService],
+  providers: [AuthService, JwtStrategy],
 })
 export class AuthModule {}

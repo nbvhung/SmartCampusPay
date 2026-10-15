@@ -24,14 +24,9 @@ POST /auth/admin/login
 Response: { "accessToken": "jwt..." }
 ```
 
-### Set Password
-```http
-POST /auth/register
-{
-  "studentCode": "B21DCCC001",
-  "password": "your-password"
-}
-```
+### Đăng nhập lần đầu
+
+Admin cấp sinh viên và thẻ vật lý. Tài khoản và mật khẩu ban đầu đều là MSSV viết hoa. Sau khi đăng nhập, gọi `POST /auth/change-password` với `oldPassword` là MSSV và `newPassword` ít nhất 8 ký tự gồm chữ hoa, chữ thường, số và ký tự đặc biệt. Phiên cũ hết hiệu lực; đăng nhập lại bằng mật khẩu mới.
 
 ## Transactions
 

@@ -129,4 +129,30 @@ describe('AdminsService', () => {
       );
     });
   });
+
+  describe('production bootstrap', () => {
+    const original = { ...process.env };
+    afterEach(() => {
+      for (const key of ['NODE_ENV', 'DEFAULT_ADMIN_USERNAME', 'DEFAULT_ADMIN_PASSWORD']) {
+        if (original[key] === undefined) delete process.env[key];
+        else process.env[key] = original[key];
+      }
+    });
+
+    it('does not create a default-password admin in production', async () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.DEFAULT_ADMIN_PASSWORD;
+      repo.findOne.mockResolvedValue(null);
+      await expect(service.seedDefaultAdmin()).rejects.toThrow('First production boot requires');
+      expect(repo.save).not.toHaveBeenCalled();
+    });
+
+    it('can restart after the bootstrap password has been removed', async () => {
+      process.env.NODE_ENV = 'production';
+      delete process.env.DEFAULT_ADMIN_PASSWORD;
+      repo.findOne.mockResolvedValue(mockAdmin);
+      await expect(service.seedDefaultAdmin()).resolves.toBeUndefined();
+      expect(repo.save).not.toHaveBeenCalled();
+    });
+  });
 });

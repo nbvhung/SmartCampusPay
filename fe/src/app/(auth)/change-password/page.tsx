@@ -28,8 +28,8 @@ export default function ChangePasswordPage() {
       setError('Mật khẩu xác nhận không khớp');
       return;
     }
-    if (newPassword.length < 6) {
-      setError('Mật khẩu phải có ít nhất 6 ký tự');
+    if (!/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9\s])\S{8,72}$/.test(newPassword) || new TextEncoder().encode(newPassword).length > 72) {
+      setError('Mật khẩu cần 8–72 ký tự, tối đa 72 byte, có chữ hoa, chữ thường, số và ký tự đặc biệt, không có khoảng trắng');
       return;
     }
     if (oldPassword === newPassword) {
@@ -99,9 +99,9 @@ export default function ChangePasswordPage() {
                 name="newPassword"
                 type="password"
                 required
-                minLength={6}
+                minLength={8}
                 autoComplete="new-password"
-                placeholder="Ít nhất 6 ký tự"
+                placeholder="Chữ hoa, chữ thường, số và ký tự đặc biệt"
                 disabled={isLoading}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 transition"
               />
@@ -116,7 +116,7 @@ export default function ChangePasswordPage() {
                 name="confirmPassword"
                 type="password"
                 required
-                minLength={6}
+                minLength={8}
                 autoComplete="new-password"
                 placeholder="Nhập lại mật khẩu mới"
                 disabled={isLoading}

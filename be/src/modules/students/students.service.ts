@@ -7,6 +7,8 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource, Raw } from 'typeorm';
 import * as ExcelJS from 'exceljs';
+import * as bcrypt from 'bcryptjs';
+import { validateSync } from 'class-validator';
 import { Student } from './student.entity';
 import { Account } from '../accounts/account.entity';
 import { Card, CardStatus } from '../cards/card.entity';
@@ -65,13 +67,24 @@ export class StudentsService {
 
         const student = manager.create(Student, {
           studentCode,
-          fullName: null,
-          email: null,
-          faculty: null,
+          fullName: dto.fullName?.trim() || null,
+          email: dto.email?.trim().toLowerCase() || null,
+          faculty: dto.faculty?.trim() || null,
+          phone: dto.phone?.trim() || null,
+          passwordHash: await bcrypt.hash(studentCode, 10),
           isActive: true,
           mustChangePassword: true,
         });
         const savedStudent = await manager.save(student);
+        await manager.save(
+          Account,
+          manager.create(Account, {
+            studentId: savedStudent.id,
+            balance: 0,
+            dailyLimit: 500000,
+            dailySpent: 0,
+          }),
+        );
 
         await manager.save(
           manager.create(Card, {
@@ -82,7 +95,7 @@ export class StudentsService {
           }),
         );
 
-        return savedStudent;
+        return manager.findOneByOrFail(Student, { id: savedStudent.id });
       });
     } catch (err: unknown) {
       if (
@@ -336,6 +349,10 @@ export class StudentsService {
       rows.push({
         studentCode,
         cardUid,
+        fullName: row.getCell(3).text.trim() || undefined,
+        email: row.getCell(4).text.trim() || undefined,
+        faculty: row.getCell(5).text.trim() || undefined,
+        phone: row.getCell(6).text.trim() || undefined,
         rowNumber,
       });
     });
@@ -343,10 +360,23 @@ export class StudentsService {
     // Mỗi dòng dùng đúng transaction provisioning Student + physical Card.
     for (const row of rows) {
       try {
-        await this.create({
+        const dto = Object.assign(new CreateStudentDto(), {
           studentCode: row.studentCode,
           cardUid: row.cardUid,
+          fullName: row.fullName,
+          email: row.email,
+          faculty: row.faculty,
+          phone: row.phone,
         });
+        const validation = validateSync(dto);
+        if (validation.length) {
+          throw new BadRequestException(
+            validation
+              .flatMap((error) => Object.values(error.constraints ?? {}))
+              .join('; '),
+          );
+        }
+        await this.create(dto);
         result.created++;
       } catch (err: unknown) {
         if (err instanceof ConflictException) {

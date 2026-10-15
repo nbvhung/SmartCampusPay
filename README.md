@@ -1,5 +1,7 @@
 # SmartCampusPay
 
+Triển khai: [Hướng dẫn VPS và QR cho lần đầu](docs/deploy-first-server.md).
+
 Tài liệu tích hợp: [API thiết bị v1.1](docs/hardware-api.md) · [Kiểm thử và nâng database](docs/integration-validation.md).
 
 Hệ thống thanh toán nội bộ không tiền mặt cho thẻ sinh viên gắn chip NFC/RFID.
@@ -102,7 +104,8 @@ npm run dev
 ### Auth
 - `POST /api/v1/auth/login` — Student login
 - `POST /api/v1/auth/admin/login` — Admin login
-- `POST /api/v1/auth/register` — Set password
+- `POST /api/v1/auth/change-password` — Đổi mật khẩu lần đầu (ít nhất 8 ký tự, gồm hoa, thường, số, ký tự đặc biệt).
+- Admin cấp sinh viên và thẻ; tài khoản/mật khẩu ban đầu đều là MSSV viết hoa.
 
 ### Transactions
 - `POST /api/v1/transactions/pay` — Payment (API key required)

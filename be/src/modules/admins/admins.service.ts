@@ -85,7 +85,13 @@ export class AdminsService {
     });
     if (exists) return;
 
-    const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD || 'Admin@123';
+    const configuredPassword = process.env.DEFAULT_ADMIN_PASSWORD;
+    if (process.env.NODE_ENV === 'production' &&
+        (!process.env.DEFAULT_ADMIN_USERNAME || !configuredPassword ||
+         configuredPassword.length < 20 || /replace|example|change.?me/i.test(configuredPassword))) {
+      throw new Error('First production boot requires DEFAULT_ADMIN_USERNAME and a random DEFAULT_ADMIN_PASSWORD of at least 20 characters');
+    }
+    const defaultPassword = configuredPassword || 'Admin@123';
     await this.create(
       defaultUsername,
       defaultPassword,

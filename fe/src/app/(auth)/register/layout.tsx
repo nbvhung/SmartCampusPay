@@ -1,8 +1,5 @@
-import "../login/login.css";
-import "./register.css";
+import type { ReactNode } from 'react';
 
-export default function RegisterLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default function RegisterRedirectLayout({ children }: { children: ReactNode }) {
   return children;
 }

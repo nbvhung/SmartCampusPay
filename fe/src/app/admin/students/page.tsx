@@ -203,6 +203,10 @@ export default function AdminStudentsPage() {
         await studentApi.create({
           studentCode: formData.studentCode,
           cardUid: formData.cardUid,
+          fullName: formData.fullName || undefined,
+          email: formData.email || undefined,
+          faculty: formData.faculty || undefined,
+          phone: formData.phone || undefined,
         });
         setFormSuccess("Provision sinh viên và thẻ thành công!");
       } else if (modalMode === "edit" && selectedStudent) {
@@ -258,25 +262,18 @@ export default function AdminStudentsPage() {
       render: (s) => s.faculty || "Chưa cập nhật",
     },
     {
-      key: "registeredAt",
-      header: "Đăng ký",
+      key: "mustChangePassword",
+      header: "Mật khẩu",
       render: (s) => {
-        const legacy = !s.registeredAt && Boolean(s.account);
         return (
           <span
             className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-              s.registeredAt
-                ? "bg-green-100 text-green-700"
-                : legacy
-                  ? "bg-blue-100 text-blue-700"
-                  : "bg-amber-100 text-amber-700"
+              s.mustChangePassword
+                ? "bg-amber-100 text-amber-700"
+                : "bg-green-100 text-green-700"
             }`}
           >
-            {s.registeredAt
-              ? "Đã đăng ký"
-              : legacy
-                ? "Tài khoản legacy"
-                : "Chờ đăng ký"}
+            {s.mustChangePassword ? "Chờ đổi mật khẩu" : "Đã đổi mật khẩu"}
           </span>
         );
       },
@@ -379,7 +376,7 @@ export default function AdminStudentsPage() {
             ref={fileRef}
             type="file"
             accept=".xlsx"
-            title="File Excel gồm 2 cột: MSSV và UID thẻ vật lý"
+            title="Excel: MSSV, UID thẻ, Họ tên, Email liên hệ, Khoa, Số điện thoại"
             className="hidden"
             onChange={(e) =>
               e.target.files?.[0] && handleImport(e.target.files[0])
@@ -390,8 +387,8 @@ export default function AdminStudentsPage() {
 
       <div className="mb-4 text-sm">
         <p className="text-gray-500">
-          Provisioning chỉ nhận MSSV và UID thẻ NFC vật lý; không tạo hồ sơ, mật
-          khẩu hoặc tài khoản ví.
+          Cấp hồ sơ, thẻ và ví số dư 0. Tài khoản/mật khẩu lần đầu là MSSV viết hoa;
+          sinh viên phải đổi mật khẩu ngay. Email và số điện thoại chỉ là thông tin liên hệ.
         </p>
         {importFeedback && (
           <p
@@ -444,8 +441,8 @@ export default function AdminStudentsPage() {
               {modalMode === "add" && (
                 <>
                   <p className="text-sm text-gray-500">
-                    Chỉ tạo Student stub và gắn thẻ vật lý. Tài khoản và mật
-                    khẩu sẽ được tạo ở luồng đăng ký sau.
+                    Cấp tài khoản và ví số dư 0. Mật khẩu ban đầu là MSSV viết hoa;
+                    sinh viên phải đổi mật khẩu sau lần đăng nhập đầu tiên.
                   </p>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -485,7 +482,7 @@ export default function AdminStudentsPage() {
                 </>
               )}
 
-              {modalMode === "edit" && (
+              {(modalMode === "edit" || modalMode === "add") && (
                 <>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
