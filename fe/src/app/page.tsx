@@ -1,21 +1,5 @@
-import Link from 'next/link';
-import { ArrowUpRight, GraduationCap, Wifi } from 'lucide-react';
-import { PtitBrand } from '@/components/ui/ptit-brand';
-import { ThemeToggle } from '@/components/ui/theme-toggle';
+import { redirect } from 'next/navigation';
 
 export default function HomePage() {
-  return (
-    <div className="standalone-shell">
-      <header className="standalone-header"><PtitBrand /><ThemeToggle /></header>
-      <main className="home-content">
-        <span className="home-kicker"><Wifi size={15} /> KẾT NỐI TRONG KHUÔN VIÊN</span>
-        <h1>Một chạm.<br /><span>Mọi tiện ích.</span></h1>
-        <p>Ví sinh viên, thẻ NFC và thanh toán nội bộ.<br />Tất cả trong một không gian, dành cho cộng đồng PTIT.</p>
-        <div className="home-portals">{[
-          { href: '/login/student', icon: GraduationCap, title: 'Sinh viên đăng nhập', description: 'Quản lý ví, nạp tiền và lịch sử thanh toán cá nhân.' },
-        ].map(({ href, icon: Icon, title, description }) => <Link href={href} key={href} className="home-portal"><span className="stat-icon"><Icon size={24} /></span><h2>{title}<ArrowUpRight size={19} /></h2><p>{description}</p></Link>)}</div>
-      </main>
-      <footer className="student-footer">SmartCampusPay · PTIT<span>Thanh toán gọn gàng, mỗi ngày.</span></footer>
-    </div>
-  );
+  redirect('/login/student');
 }
